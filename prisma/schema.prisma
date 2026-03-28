@@ -1,0 +1,64 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum BillingAccount {
+  NORFOLK_GROUP
+  NORFOLK_AI
+  CIDALE
+}
+
+enum AiProvider {
+  CURSOR
+  ANTHROPIC
+  OPENAI
+  GOOGLE_API
+  GEMINI
+  MANUS
+  REPLIT
+  VERCEL
+  ELEVENLABS
+  PERPLEXITY
+  MIDJOURNEY
+  AWS_BEDROCK
+  MISTRAL
+  COHERE
+  OTHER
+}
+
+model Expense {
+  id              String          @id @default(cuid())
+  provider        AiProvider
+  billingAccount  BillingAccount
+  amount          Decimal         @db.Decimal(18, 4)
+  currency        String          @default("USD")
+  incurredAt      DateTime
+  periodStart     DateTime?
+  periodEnd       DateTime?
+  label           String?
+  notes           String?
+  source          String          @default("manual")
+  externalRef     String?
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  @@index([incurredAt])
+  @@index([provider])
+  @@index([billingAccount])
+  @@unique([provider, externalRef])
+}
+
+model SyncRun {
+  id         String      @id @default(cuid())
+  provider   AiProvider
+  startedAt  DateTime    @default(now())
+  finishedAt DateTime?
+  ok         Boolean
+  message    String?
+  imported   Int         @default(0)
+}

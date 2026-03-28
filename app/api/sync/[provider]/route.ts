@@ -1,0 +1,56 @@
+import { NextResponse } from "next/server";
+import { BillingAccount } from "@prisma/client";
+import { syncAnthropicUsage } from "@/lib/integrations/anthropic-sync";
+import { syncOpenAIUsage } from "@/lib/integrations/openai-sync";
+
+export const dynamic = "force-dynamic";
+
+type Params = { params: Promise<{ provider: string }> };
+
+function parseBillingAccount(v: string | null): BillingAccount {
+  if (v && (Object.values(BillingAccount) as string[]).includes(v)) {
+    return v as BillingAccount;
+  }
+  return "NORFOLK_GROUP";
+}
+
+export async function POST(request: Request, ctx: Params) {
+  const { provider } = await ctx.params;
+  const { searchParams } = new URL(request.url);
+  const billingAccount = parseBillingAccount(searchParams.get("billingAccount"));
+
+  let body: { start?: string; end?: string } = {};
+  try {
+    const j = await request.json();
+    if (j && typeof j === "object") body = j as typeof body;
+  } catch {
+    /* optional body */
+  }
+
+  const start = body.start ? new Date(body.start) : undefined;
+  const end = body.end ? new Date(body.end) : undefined;
+
+  switch (provider) {
+    case "openai": {
+      const result = await syncOpenAIUsage({
+        billingAccount,
+        startTime: start,
+        endTime: end,
+      });
+      return NextResponse.json(result, { status: result.ok ? 200 : 422 });
+    }
+    case "anthropic": {
+      const result = await syncAnthropicUsage({ billingAccount });
+      return NextResponse.json(result, { status: result.ok ? 200 : 422 });
+    }
+    default:
+      return NextResponse.json(
+        {
+          ok: false,
+          message: `Unknown sync target "${provider}". Use openai or anthropic.`,
+          imported: 0,
+        },
+        { status: 400 },
+      );
+  }
+}
