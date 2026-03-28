@@ -22,6 +22,8 @@ export function IntegrationPanel({
   onSyncBillingChange,
   onSyncOpenAI,
   onSyncAnthropic,
+  onSyncChatGPT,
+  onSyncPerplexity,
   busy,
 }: {
   meta: ProviderMeta[];
@@ -30,6 +32,8 @@ export function IntegrationPanel({
   onSyncBillingChange: (a: BillingAccount) => void;
   onSyncOpenAI: () => void;
   onSyncAnthropic: () => void;
+  onSyncChatGPT: () => void;
+  onSyncPerplexity: () => void;
   busy: string | null;
 }) {
   return (
@@ -55,8 +59,8 @@ export function IntegrationPanel({
             </Select>
           </div>
           <p className="max-w-md text-xs text-muted-foreground">
-            OpenAI sync attributes imported rows to this identity. Keys stay in
-            environment variables only.
+            API sync attributes imported rows to this billing account. Secrets
+            stay in environment variables only.
           </p>
         </CardContent>
       </Card>
@@ -71,7 +75,11 @@ export function IntegrationPanel({
                 variant={p.sync === "manual" ? "outline" : "secondary"}
                 className="shrink-0 text-[10px] uppercase tracking-wide"
               >
-                {p.sync === "manual" ? "Manual" : "API"}
+                {p.sync === "manual"
+                  ? "Manual"
+                  : p.sync === "chatgpt" || p.sync === "perplexity"
+                    ? "Env"
+                    : "API"}
               </Badge>
             </CardHeader>
             <CardContent className="flex-1 pb-3">
@@ -110,7 +118,31 @@ export function IntegrationPanel({
                   disabled={busy === "anthropic"}
                   onClick={onSyncAnthropic}
                 >
-                  {busy === "anthropic" ? "Checking…" : "Anthropic status"}
+                  {busy === "anthropic" ? "Syncing…" : "Sync Anthropic API"}
+                </Button>
+              ) : null}
+              {p.sync === "chatgpt" ? (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="secondary"
+                  disabled={busy === "chatgpt"}
+                  onClick={onSyncChatGPT}
+                >
+                  {busy === "chatgpt" ? "Syncing…" : "Sync ChatGPT monthly"}
+                </Button>
+              ) : null}
+              {p.sync === "perplexity" ? (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="secondary"
+                  disabled={busy === "perplexity"}
+                  onClick={onSyncPerplexity}
+                >
+                  {busy === "perplexity"
+                    ? "Syncing…"
+                    : "Sync Perplexity monthly"}
                 </Button>
               ) : null}
             </CardFooter>

@@ -2,6 +2,18 @@
 
 Internal web app to **record, import, and visualize** AI vendor spend (Cursor, Anthropic, OpenAI, Google / Gemini, Manus, Replit, Vercel, and others) tied to billing identities.
 
+### Billing identities
+
+Spend is attributed to three **billing accounts**, which map to the primary login emails in use:
+
+| Billing account | Email (typical) |
+| --- | --- |
+| `NORFOLK_GROUP` | ricardo.cidale@norfolkgroup.io |
+| `NORFOLK_AI` | ricardo.cidale@norfolk.ai |
+| `CIDALE` | ricardo@cidale.com |
+
+Labels in the UI come from `lib/billing-accounts.ts`.
+
 ### Documentation and review (start here)
 
 | File | Who it is for | What it covers |
@@ -56,17 +68,28 @@ After copying from Drive to local, run `npm install` on the local copy. Commit `
 ## Repository layout (folder schema)
 
 ```
-app/                    # App Router: layouts, pages, global styles
+app/
+  (app)/                # Logged-in style shell: sidebar + breadcrumbs (see layout.tsx)
+    admin/              # Administration (expense sources, probes, API sync)
+    expenses/add/       # Manual expense entry (sidebar: Add expense)
+    page.tsx            # Dashboard home (/)
   api/                  # HTTP API (Route Handlers only — no business logic dumps)
     expenses/           # CRUD for line items
     import/             # Batch JSON import
     summary/            # Aggregates for dashboard
+    analytics/          # Read-only reporting (e.g. vendor spend windows)
     sync/[provider]/    # Provider sync triggers (openai, anthropic, …)
 components/
+  layout/               # App chrome (sidebar, breadcrumbs, mobile nav)
+  expenses/             # Manual entry wrapper (uses dashboard ExpenseForm)
+  admin/                # Admin-only client sections
   dashboard/            # Feature UI (charts, forms, lists)
   ui/                   # shadcn primitives — thin wrappers only
 lib/
+  nav-config.ts         # Sidebar labels and route → breadcrumb titles
+  admin/                # Admin helpers (e.g. expense source env status)
   db.ts                 # Prisma client singleton
+  analytics/            # Server-side spend rollups (used by API + SSR)
   sdk-clients.ts        # OpenAI / Anthropic client factories (env-based)
   integrations/         # Per-vendor sync + types (API shapes live here)
   validations/          # Zod schemas shared by API routes
@@ -95,6 +118,9 @@ All JSON APIs use `Content-Type: application/json` unless noted. Amounts in JSON
 | `DELETE` | `/api/expenses/[id]` | Deletes row. `404` if missing. |
 | `POST` | `/api/import` | Body: `{ "expenses": [ … ] }` — each item matches create schema. Returns `{ created, errors }`. |
 | `GET` | `/api/summary` | Totals and groupings + recent `SyncRun` rows. |
+| `GET` | `/api/analytics/vendor-spend` | Vendor breakdown: current UTC month (MTD), monthly grid for **M-1 … M-12**, and **cumulative** totals over those same 12 months (matches grid row totals; see `lib/analytics/vendor-spend.ts`). |
+| `POST` | `/api/admin/probe/openai` | Checks `OPENAI_*` keys against the OpenAI models endpoint (no spend import). |
+| `POST` | `/api/admin/probe/anthropic` | Checks `ANTHROPIC_API_KEY` against the Messages API (validation error = key accepted). |
 | `POST` | `/api/sync/[provider]` | `provider`: `openai` \| `anthropic`. Query: `billingAccount` (`BillingAccount` enum, default `NORFOLK_GROUP`). Optional JSON body: `{ start?, end? }` (ISO datetimes). Returns sync result; `422` when sync reports failure. |
 
 **Create body fields** (see `expenseCreateSchema` in `lib/validations/expense.ts`): `provider`, `billingAccount`, `amount`, optional `currency`, `incurredAt`, `periodStart`, `periodEnd`, `label`, `notes`, `source`, `externalRef`. Enums must match Prisma `AiProvider` and `BillingAccount`.

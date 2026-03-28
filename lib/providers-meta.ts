@@ -4,7 +4,7 @@ export type ProviderMeta = {
   id: AiProvider;
   label: string;
   description: string;
-  sync: "openai" | "anthropic" | "manual";
+  sync: "openai" | "anthropic" | "chatgpt" | "perplexity" | "manual";
   docsUrl?: string;
 };
 
@@ -19,10 +19,11 @@ export const PROVIDER_META: ProviderMeta[] = [
   },
   {
     id: "ANTHROPIC",
-    label: "Anthropic / Claude API",
-    description: "Claude API and Console billing.",
+    label: "Anthropic (Claude API)",
+    description:
+      "Claude API usage and USD cost via Admin API (cost_report + usage_report/messages). Claude.ai subscriptions: enter separately or use manual rows.",
     sync: "anthropic",
-    docsUrl: "https://docs.anthropic.com",
+    docsUrl: "https://docs.anthropic.com/en/api/usage-cost-api",
   },
   {
     id: "OPENAI",
@@ -30,6 +31,14 @@ export const PROVIDER_META: ProviderMeta[] = [
     description: "Chat Completions, embeddings, and org usage when admin key is available.",
     sync: "openai",
     docsUrl: "https://platform.openai.com/docs",
+  },
+  {
+    id: "CHATGPT",
+    label: "ChatGPT",
+    description:
+      "ChatGPT product billing (Plus, Team, Business). Not the same as API usage — set CHATGPT_MONTHLY_USD or enter invoices manually.",
+    sync: "chatgpt",
+    docsUrl: "https://help.openai.com/en/collections/3943089-chatgpt",
   },
   {
     id: "GOOGLE_API",
@@ -48,13 +57,15 @@ export const PROVIDER_META: ProviderMeta[] = [
   {
     id: "MANUS",
     label: "Manus",
-    description: "Add expenses manually until a documented billing API is available.",
+    description:
+      "Agent / automation platform — usually a top line item. Record monthly from invoices or billing emails; no public API here yet.",
     sync: "manual",
   },
   {
     id: "REPLIT",
     label: "Replit",
-    description: "Deployments and Core; manual or future Replit billing export.",
+    description:
+      "Core, Deployments, and add-ons — often a top line item. Enter from Replit account billing or statements; export/API when available.",
     sync: "manual",
     docsUrl: "https://docs.replit.com",
   },
@@ -75,8 +86,10 @@ export const PROVIDER_META: ProviderMeta[] = [
   {
     id: "PERPLEXITY",
     label: "Perplexity",
-    description: "API or Pro subscription.",
-    sync: "manual",
+    description:
+      "API credits and/or Pro — no public cost API. Set PERPLEXITY_MONTHLY_USD from console billing / invoices, or manual entry.",
+    sync: "perplexity",
+    docsUrl: "https://docs.perplexity.ai/docs/getting-started/api-groups",
   },
   {
     id: "MIDJOURNEY",

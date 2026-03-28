@@ -10,7 +10,7 @@ Internal dashboard for **AI vendor spend**: ingest line items, aggregate by prov
 
 **Billing identity mapping (domain rule):**
 
-- `ricardo.cidale@norfolkgroup.ai` → `BillingAccount.NORFOLK_GROUP`
+- `ricardo.cidale@norfolkgroup.io` → `BillingAccount.NORFOLK_GROUP`
 - `ricardo.cidale@norfolk.ai` → `BillingAccount.NORFOLK_AI`
 - `ricardo@cidale.com` → `BillingAccount.CIDALE`
 
@@ -46,11 +46,20 @@ Reference `package.json` for exact versions.
 
 | Path | Responsibility |
 | --- | --- |
+| `app/(app)/layout.tsx` | App shell: sidebar navigation + breadcrumb header (`AppChrome`). |
+| `app/(app)/admin/**` | Administration: expense source registry, API probes, sync controls. |
+| `app/(app)/expenses/add` | Manual expense form; linked from sidebar, not primary dashboard space. |
 | `app/api/**` | Route Handlers: parse request → validate (Zod) → call `lib` / Prisma → JSON response. Keep thin. |
-| `app/*.tsx` | Pages and layouts; fetch server-side or call internal APIs as the app already does. |
+| `app/(app)/*.tsx` | Dashboard and admin pages; prefer server data fetch then pass to client sections. |
+| `components/layout/**` | App chrome (sidebar, breadcrumbs); client component. |
+| `components/expenses/**` | Thin clients around manual entry (e.g. `AddExpenseClient`). |
+| `components/admin/**` | Admin-only UI blocks (e.g. expense sources). |
 | `components/dashboard/**` | Feature UI only; no direct Prisma. |
 | `components/ui/**` | shadcn primitives; do not embed business rules. |
 | `lib/db.ts` | Prisma client export — use this, do not instantiate new clients ad hoc. |
+| `lib/nav-config.ts` | Sidebar and breadcrumb labels; keep in sync with `app/(app)` routes. |
+| `lib/admin/**` | Server-only admin helpers (env status for expense sources). |
+| `lib/analytics/**` | Read-only aggregations (e.g. vendor spend windows); keep free of UI imports. |
 | `lib/validations/**` | Zod schemas — **contract** for JSON bodies; import from routes. |
 | `lib/integrations/**` | External APIs, response mapping, `SyncRun` / expense writes. Document unstable vendor shapes in comments. |
 | `lib/sdk-clients.ts` | **Single place** to construct OpenAI / Anthropic clients from `process.env`. |
@@ -78,6 +87,8 @@ Implementations: `app/api/**/route.ts`. Validation: `lib/validations/expense.ts`
 - `PATCH|DELETE /api/expenses/[id]`
 - `POST /api/import` — `{ expenses: [...] }` → `{ created, errors }`
 - `GET /api/summary` — aggregates + recent syncs
+- `GET /api/analytics/vendor-spend` — current month MTD; matrix = M-1 … M-12 (UTC); `rollingTotalByVendor` = cumulative sum over those months (same as matrix row totals; excludes current month)
+- `POST /api/admin/probe/openai` \| `anthropic` — connectivity checks (internal; add auth if app is ever public)
 - `POST /api/sync/[provider]` — `openai` \| `anthropic`; query `billingAccount`; body optional `{ start, end }`
 
 **Rule:** New public JSON fields → extend Zod schema + Prisma (if persisted) + migration + README/CLAUDE if behavior is user-visible.

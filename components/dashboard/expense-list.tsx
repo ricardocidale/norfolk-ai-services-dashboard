@@ -2,6 +2,7 @@
 
 import type { AiProvider } from "@prisma/client";
 import { BILLING_ACCOUNT_LABEL } from "@/lib/billing-accounts";
+import { providerMeta } from "@/lib/providers-meta";
 import { Button } from "@/components/ui/button";
 import {
   Table,
@@ -83,5 +84,5 @@ export function ExpenseList({
 }
 
 function formatProvider(p: AiProvider) {
-  return p.replaceAll("_", " ");
+  return providerMeta(p)?.label ?? p.replaceAll("_", " ");
 }

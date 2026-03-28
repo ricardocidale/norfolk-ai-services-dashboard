@@ -17,6 +17,7 @@ enum AiProvider {
   CURSOR
   ANTHROPIC
   OPENAI
+  CHATGPT
   GOOGLE_API
   GEMINI
   MANUS

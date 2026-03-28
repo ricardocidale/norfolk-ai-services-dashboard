@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
+import { compareProviderSpendDesc } from "@/lib/sort-vendors";
 
 export const dynamic = "force-dynamic";
 
@@ -28,11 +29,18 @@ export async function GET() {
   return NextResponse.json({
     totalAmount: totals._sum.amount?.toString() ?? "0",
     expenseCount: totals._count,
-    byProvider: byProvider.map((r) => ({
-      provider: r.provider,
-      sum: r._sum.amount?.toString() ?? "0",
-      count: r._count,
-    })),
+    byProvider: byProvider
+      .map((r) => ({
+        provider: r.provider,
+        sum: r._sum.amount?.toString() ?? "0",
+        count: r._count,
+      }))
+      .sort((a, b) =>
+        compareProviderSpendDesc(
+          { provider: a.provider, amount: Number(a.sum) },
+          { provider: b.provider, amount: Number(b.sum) },
+        ),
+      ),
     byAccount: byAccount.map((r) => ({
       billingAccount: r.billingAccount,
       sum: r._sum.amount?.toString() ?? "0",

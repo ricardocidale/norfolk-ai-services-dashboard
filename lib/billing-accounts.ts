@@ -1,7 +1,7 @@
 import type { BillingAccount } from "@prisma/client";
 
 export const BILLING_ACCOUNT_LABEL: Record<BillingAccount, string> = {
-  NORFOLK_GROUP: "ricardo.cidale@norfolkgroup.ai",
+  NORFOLK_GROUP: "ricardo.cidale@norfolkgroup.io",
   NORFOLK_AI: "ricardo.cidale@norfolk.ai",
   CIDALE: "ricardo@cidale.com",
 };

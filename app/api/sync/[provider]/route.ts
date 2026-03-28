@@ -1,7 +1,9 @@
 import { NextResponse } from "next/server";
 import { BillingAccount } from "@prisma/client";
 import { syncAnthropicUsage } from "@/lib/integrations/anthropic-sync";
+import { syncChatGPTSpend } from "@/lib/integrations/chatgpt-sync";
 import { syncOpenAIUsage } from "@/lib/integrations/openai-sync";
+import { syncPerplexitySpend } from "@/lib/integrations/perplexity-sync";
 
 export const dynamic = "force-dynamic";
 
@@ -19,7 +21,7 @@ export async function POST(request: Request, ctx: Params) {
   const { searchParams } = new URL(request.url);
   const billingAccount = parseBillingAccount(searchParams.get("billingAccount"));
 
-  let body: { start?: string; end?: string } = {};
+  let body: { start?: string; end?: string; month?: string } = {};
   try {
     const j = await request.json();
     if (j && typeof j === "object") body = j as typeof body;
@@ -40,14 +42,32 @@ export async function POST(request: Request, ctx: Params) {
       return NextResponse.json(result, { status: result.ok ? 200 : 422 });
     }
     case "anthropic": {
-      const result = await syncAnthropicUsage({ billingAccount });
+      const result = await syncAnthropicUsage({
+        billingAccount,
+        startTime: start,
+        endTime: end,
+      });
+      return NextResponse.json(result, { status: result.ok ? 200 : 422 });
+    }
+    case "chatgpt": {
+      const result = await syncChatGPTSpend({
+        billingAccount,
+        month: body.month,
+      });
+      return NextResponse.json(result, { status: result.ok ? 200 : 422 });
+    }
+    case "perplexity": {
+      const result = await syncPerplexitySpend({
+        billingAccount,
+        month: body.month,
+      });
       return NextResponse.json(result, { status: result.ok ? 200 : 422 });
     }
     default:
       return NextResponse.json(
         {
           ok: false,
-          message: `Unknown sync target "${provider}". Use openai or anthropic.`,
+          message: `Unknown sync target "${provider}". Use openai, anthropic, chatgpt, or perplexity.`,
           imported: 0,
         },
         { status: 400 },

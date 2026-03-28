@@ -1,10 +1,9 @@
 "use client";
 
+import Link from "next/link";
 import { useMemo, useState } from "react";
 import type { AiProvider, BillingAccount } from "@prisma/client";
-import { BILLING_ACCOUNT_ORDER } from "@/lib/billing-accounts";
 import { BILLING_ACCOUNT_LABEL } from "@/lib/billing-accounts";
-import { PROVIDER_META } from "@/lib/providers-meta";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -16,10 +15,11 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
+import type { VendorSpendAnalytics } from "@/lib/analytics/vendor-spend";
+import { providerMeta } from "@/lib/providers-meta";
 import { ExpenseChart } from "./expense-chart";
-import { ExpenseForm } from "./expense-form";
 import { ExpenseList } from "./expense-list";
-import { IntegrationPanel } from "./integration-panel";
+import { VendorSpendTables } from "./vendor-spend-tables";
 
 export type DashboardExpenseRow = {
   id: string;
@@ -38,22 +38,23 @@ export type DashboardSnapshot = {
   byAccount: { billingAccount: BillingAccount; sum: string; count: number }[];
   totalAmount: string;
   expenseCount: number;
+  vendorSpend: VendorSpendAnalytics;
 };
 
 export function DashboardApp({ initial }: { initial: DashboardSnapshot }) {
   const [snapshot, setSnapshot] = useState(initial);
-  const [busy, setBusy] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
-  const [syncBilling, setSyncBilling] = useState<BillingAccount>("NORFOLK_GROUP");
 
   const refresh = async () => {
-    const [expRes, sumRes] = await Promise.all([
+    const [expRes, sumRes, vsRes] = await Promise.all([
       fetch("/api/expenses?take=120"),
       fetch("/api/summary"),
+      fetch("/api/analytics/vendor-spend"),
     ]);
     const expJson = await expRes.json();
     const sumJson = await sumRes.json();
-    if (!expRes.ok || !sumRes.ok) {
+    const vsJson = await vsRes.json();
+    if (!expRes.ok || !sumRes.ok || !vsRes.ok) {
       setToast("Could not refresh data.");
       return;
     }
@@ -69,6 +70,7 @@ export function DashboardApp({ initial }: { initial: DashboardSnapshot }) {
       byAccount: sumJson.byAccount,
       totalAmount: sumJson.totalAmount,
       expenseCount: sumJson.expenseCount,
+      vendorSpend: vsJson as VendorSpendAnalytics,
     });
     setToast("Updated.");
     setTimeout(() => setToast(null), 2000);
@@ -77,30 +79,12 @@ export function DashboardApp({ initial }: { initial: DashboardSnapshot }) {
   const chartData = useMemo(
     () =>
       snapshot.byProvider.map((r) => ({
-        name: r.provider.replaceAll("_", " "),
+        name: providerMeta(r.provider)?.label ?? r.provider.replaceAll("_", " "),
         total: Number(r.sum),
         count: r.count,
       })),
     [snapshot.byProvider],
   );
-
-  const runSync = async (provider: "openai" | "anthropic") => {
-    setBusy(provider);
-    setToast(null);
-    try {
-      const q = new URLSearchParams({ billingAccount: syncBilling });
-      const res = await fetch(`/api/sync/${provider}?${q}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({}),
-      });
-      const j = await res.json();
-      setToast(j.message ?? (res.ok ? "Done." : "Sync failed."));
-      await refresh();
-    } finally {
-      setBusy(null);
-    }
-  };
 
   return (
     <div className="mx-auto flex w-full max-w-6xl flex-col gap-10 px-4 py-10 sm:px-6">
@@ -150,20 +134,21 @@ export function DashboardApp({ initial }: { initial: DashboardSnapshot }) {
             <CardDescription>By billing account</CardDescription>
           </CardHeader>
           <CardContent>
-            <ul className="flex flex-wrap gap-2">
+            <ul className="flex flex-col gap-0 divide-y divide-border/70">
               {snapshot.byAccount.map((a) => (
-                <li key={a.billingAccount}>
-                  <Badge variant="outline" className="h-auto max-w-full py-1.5 font-normal">
-                    <span className="mr-2 font-medium">
-                      {BILLING_ACCOUNT_LABEL[a.billingAccount]}
-                    </span>
-                    <span className="tabular-nums text-primary">
-                      $
-                      {Number(a.sum).toLocaleString(undefined, {
-                        maximumFractionDigits: 0,
-                      })}
-                    </span>
-                  </Badge>
+                <li
+                  key={a.billingAccount}
+                  className="flex items-baseline justify-between gap-4 py-3 first:pt-0"
+                >
+                  <span className="text-sm font-medium leading-snug">
+                    {BILLING_ACCOUNT_LABEL[a.billingAccount]}
+                  </span>
+                  <span className="shrink-0 tabular-nums text-base font-semibold text-primary">
+                    $
+                    {Number(a.sum).toLocaleString(undefined, {
+                      maximumFractionDigits: 0,
+                    })}
+                  </span>
                 </li>
               ))}
             </ul>
@@ -171,44 +156,56 @@ export function DashboardApp({ initial }: { initial: DashboardSnapshot }) {
         </Card>
       </section>
 
-      <section className="grid gap-8 lg:grid-cols-5">
-        <div className="lg:col-span-3 space-y-4">
-          <h2 className="text-lg font-medium">Spend by provider</h2>
-          <Card>
-            <CardContent className="pt-6">
-              <ExpenseChart data={chartData} />
-            </CardContent>
-          </Card>
-        </div>
-        <div className="lg:col-span-2 space-y-4">
-          <h2 className="text-lg font-medium">Add expense</h2>
-          <ExpenseForm
-            onCreated={async () => {
-              await refresh();
-            }}
-          />
-        </div>
+      <section className="space-y-4">
+        <h2 className="text-lg font-medium">Vendor tables</h2>
+        <VendorSpendTables data={snapshot.vendorSpend} />
       </section>
 
       <section className="space-y-4">
-        <h2 className="text-lg font-medium">Integrations</h2>
-        <IntegrationPanel
-          meta={PROVIDER_META}
-          billingAccounts={BILLING_ACCOUNT_ORDER}
-          syncBilling={syncBilling}
-          onSyncBillingChange={setSyncBilling}
-          onSyncOpenAI={() => runSync("openai")}
-          onSyncAnthropic={() => runSync("anthropic")}
-          busy={busy}
-        />
+        <h2 className="text-lg font-medium">Spend by provider</h2>
+        <Card>
+          <CardContent className="pt-6">
+            <ExpenseChart data={chartData} />
+          </CardContent>
+        </Card>
       </section>
 
       <section className="space-y-4">
-        <div className="flex items-center justify-between gap-4">
+        <h2 className="text-lg font-medium">Data sources</h2>
+        <Card className="border-dashed">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base">Vendor APIs and imports</CardTitle>
+            <CardDescription>
+              Configure environment variables, test OpenAI / Anthropic
+              connectivity, and run usage sync from{" "}
+              <Link
+                href="/admin/sources"
+                className="font-medium text-primary underline-offset-4 hover:underline"
+              >
+                Admin → Expense sources
+              </Link>
+              .
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Button asChild variant="secondary" size="sm">
+              <Link href="/admin/sources">Open expense sources</Link>
+            </Button>
+          </CardContent>
+        </Card>
+      </section>
+
+      <section className="space-y-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
           <h2 className="text-lg font-medium">Recent expenses</h2>
-          <Button type="button" variant="outline" size="sm" onClick={() => refresh()}>
-            Refresh
-          </Button>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button asChild variant="ghost" size="sm" className="text-muted-foreground">
+              <Link href="/expenses/add">Add manually</Link>
+            </Button>
+            <Button type="button" variant="outline" size="sm" onClick={() => refresh()}>
+              Refresh
+            </Button>
+          </div>
         </div>
         <ExpenseList rows={snapshot.expenses} onChanged={refresh} />
       </section>

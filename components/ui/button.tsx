@@ -5,19 +5,21 @@ import { cva, type VariantProps } from "class-variance-authority";
 import { cn } from "@/lib/utils";
 
 const buttonVariants = cva(
-  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0",
+  "inline-flex cursor-pointer items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium transition-interactive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0",
   {
     variants: {
       variant: {
-        default: "bg-primary text-primary-foreground hover:bg-primary/90",
+        default:
+          "motion-safe-hover-lift motion-safe-active-press bg-primary text-primary-foreground shadow-sm hover:bg-primary/88 hover:shadow-md dark:hover:shadow-[0_0_24px_-4px_oklch(0.72_0.17_160_/0.35)]",
         destructive:
-          "bg-destructive text-destructive-foreground hover:bg-destructive/90",
+          "motion-safe-hover-lift motion-safe-active-press bg-destructive text-destructive-foreground shadow-sm hover:bg-destructive/88 hover:shadow-md",
         outline:
-          "border border-input bg-background hover:bg-accent hover:text-accent-foreground",
+          "motion-safe-hover-lift motion-safe-active-press border border-input bg-background shadow-sm hover:border-primary/35 hover:bg-accent/50 hover:text-accent-foreground hover:shadow-md",
         secondary:
-          "bg-secondary text-secondary-foreground hover:bg-secondary/80",
-        ghost: "hover:bg-accent hover:text-accent-foreground",
-        link: "text-primary underline-offset-4 hover:underline",
+          "motion-safe-hover-lift motion-safe-active-press bg-secondary text-secondary-foreground shadow-sm hover:bg-secondary/75 hover:shadow-md",
+        ghost:
+          "motion-safe-active-press shadow-none hover:bg-accent/70 hover:text-accent-foreground hover:shadow-sm dark:hover:bg-accent/40",
+        link: "text-primary underline-offset-4 shadow-none hover:underline hover:text-primary/85 active:opacity-75",
       },
       size: {
         default: "h-10 px-4 py-2",

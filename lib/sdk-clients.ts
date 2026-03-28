@@ -14,8 +14,10 @@ export function getOpenAIClient(): OpenAI | null {
   });
 }
 
+/** Standard Claude API key (messages, etc.). Usage & Cost sync uses Admin keys — see `anthropic-sync.ts`. */
 export function getAnthropicClient(): Anthropic | null {
-  const key = process.env.ANTHROPIC_API_KEY;
+  const key =
+    process.env.ANTHROPIC_API_KEY ?? process.env.ANTHROPIC_ADMIN_API_KEY;
   if (!key) return null;
   return new Anthropic({ apiKey: key });
 }
