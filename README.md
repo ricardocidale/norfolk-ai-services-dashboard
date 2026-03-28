@@ -2,6 +2,15 @@
 
 Internal web app to **record, import, and visualize** AI vendor spend (Cursor, Anthropic, OpenAI, Google / Gemini, Manus, Replit, Vercel, and others) tied to billing identities.
 
+### Documentation and review (start here)
+
+| File | Who it is for | What it covers |
+| --- | --- | --- |
+| **[README.md](README.md)** (this file) | Everyone onboarding or reviewing scope | Stack, local vs Drive workflow, folder layout, HTTP API summary, env and deploy |
+| **[CLAUDE.md](CLAUDE.md)** | Developers and AI-assisted workflows | Stricter repo rules: contracts (DB, HTTP, SDKs), where code must live, pre-merge checklist |
+
+**Pull requests:** Opening a PR on GitHub loads a short template (`.github/pull_request_template.md`) so authors and reviewers align on migrations, secrets, and doc updates. If a PR changes `README.md` or `CLAUDE.md`, read those diffs first so shared guidance stays accurate.
+
 ---
 
 ## Tech stack
