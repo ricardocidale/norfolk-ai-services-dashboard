@@ -32,7 +32,7 @@ MIDJOURNEY, AWS_BEDROCK, MISTRAL, COHERE, OTHER
 
 ### Active in the app
 - **Framework:** Next.js 16.2.1, React 19, TypeScript 5
-- **Styling:** Tailwind CSS v4, shadcn/ui, tw-animate-css
+- **Styling:** Tailwind CSS v4, shadcn/ui, tw-animate-css, Radix UI primitives (via shadcn)
 - **Database:** Neon PostgreSQL (prod) / Docker Postgres (local) via Prisma ORM 6.19
 - **Auth:** Clerk v7 (@clerk/nextjs)
 - **AI:** @anthropic-ai/sdk, openai
@@ -41,7 +41,7 @@ MIDJOURNEY, AWS_BEDROCK, MISTRAL, COHERE, OTHER
 - **Icons:** Lucide (primary)
 - **Finance:** decimal.js, date-fns
 - **Bundler:** Turbopack (next dev --turbopack)
-- **Node:** 24.x
+- **Node:** 20+ (confirm in Vercel project settings — @types/node is ^20)
 
 ### Installed but not yet wired into UI
 These are installed as dependencies for future use — do NOT assume they are active:
@@ -53,6 +53,7 @@ These are installed as dependencies for future use — do NOT assume they are ac
 - @google/genai (Gemini SDK)
 - @elevenlabs/elevenlabs-js (voice)
 - Vitest (testing)
+- Sonner (toast notifications)
 
 ---
 
@@ -65,7 +66,7 @@ app/
     page.tsx                      ← dashboard home
     admin/                        ← admin pages
     expenses/                     ← expense pages
-  api/                            ← API routes
+  api/                            ← API routes (see app/api/ for full HTTP contracts)
   sign-in/[[...sign-in]]/page.tsx ← Clerk custom sign-in
   sign-up/[[...sign-up]]/page.tsx ← Clerk custom sign-up
   globals.css                     ← Tailwind v4 imports
@@ -138,9 +139,9 @@ export const config = {
 
 ## DATABASE — DO NOT MODIFY CONNECTION
 
-- **Production:** Neon PostgreSQL at `ep-gentle-mode-a806hwxa.eastus2.azure.neon.tech`
+- **Production:** Neon PostgreSQL (hostname in Vercel env vars — do not hardcode)
 - **Local dev:** Docker Postgres — see `docker-compose.yml` and `.env.example`
-- `DATABASE_URL` in `.env` points to Neon for production (NOT localhost)
+- In the maintainer's setup, `DATABASE_URL` points to Neon. New contributors may use Docker only.
 - 2 migrations applied: `20250328180000_init` and `20260328120000_add_chatgpt_provider`
 - Seed: 5 expense records
 - `prisma.config.ts` at root replaces deprecated `package.json#prisma`
@@ -179,7 +180,7 @@ ANTHROPIC_API_KEY
 
 ## DEPLOYMENT
 
-- Push to `main` → Vercel auto-deploys
+- Push to `main` → Vercel auto-deploys (two paths: Vercel GitHub integration AND `.github/workflows/vercel-deploy.yml` CLI deploy — both may trigger)
 - Custom domain `spend.norfolk.ai` verified on Vercel and Clerk
 - DNS on GoDaddy (norfolk.ai)
 
@@ -218,4 +219,4 @@ npm run db:seed      # Seed database
 7. **ASK** before changing auth, database, or deployment config
 8. **COMMIT** only when the user explicitly asks — offer the commit message, push only when requested
 9. Local dev uses Docker Postgres — do not assume localhost means broken
-10. Installed-but-unused packages (Zustand, Resend, xlsx, etc.) are intentional — do not remove them
+10. Installed-but-unused packages (full list under "Installed but not yet wired" section) are intentional — do not remove them
