@@ -1,3 +1,8 @@
+---
+description: 
+alwaysApply: true
+---
+
 # Norfolk AI Expense Pulse — Project Context for Cursor/Claude
 
 > Last updated: March 29, 2026
@@ -120,7 +125,8 @@ docker-compose.yml                ← Local Postgres for dev
   - Expenses: `GET`/`POST` `/api/expenses`, `PATCH`/`DELETE` `/api/expenses/[id]`
   - Import: `POST` `/api/import`
   - Reporting: `GET` `/api/summary`, `GET` `/api/analytics/vendor-spend`
-  - Admin probe: `POST` `/api/admin/probe/[provider]` — `openai`, `anthropic`, `perplexity`
+  - Admin UI: `/admin/*` — signed-in users with `publicMetadata.role === "admin"` or default owner email (`lib/admin/is-app-admin.ts`)
+  - Admin probe: `POST` `/api/admin/probe/[provider]` — same gate as `/admin/*`
   - Sync: `POST` `/api/sync/[provider]` — `openai`, `anthropic`, `chatgpt`, `perplexity` (query `billingAccount`; optional JSON body `start`/`end` and/or `month` per provider — see route implementation)
 
 ---

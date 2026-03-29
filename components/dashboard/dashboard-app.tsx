@@ -41,7 +41,14 @@ export type DashboardSnapshot = {
   vendorSpend: VendorSpendAnalytics;
 };
 
-export function DashboardApp({ initial }: { initial: DashboardSnapshot }) {
+export function DashboardApp({
+  initial,
+  showAdminSourcesLink = false,
+}: {
+  initial: DashboardSnapshot;
+  /** Only true for app admins — /admin/sources is not reachable otherwise. */
+  showAdminSourcesLink?: boolean;
+}) {
   const [snapshot, setSnapshot] = useState(initial);
   const [toast, setToast] = useState<string | null>(null);
 
@@ -176,21 +183,33 @@ export function DashboardApp({ initial }: { initial: DashboardSnapshot }) {
           <CardHeader className="pb-2">
             <CardTitle className="text-base">Vendor APIs and imports</CardTitle>
             <CardDescription>
-              Configure environment variables, test OpenAI / Anthropic
-              connectivity, and run usage sync from{" "}
-              <Link
-                href="/admin/sources"
-                className="font-medium text-primary underline-offset-4 hover:underline"
-              >
-                Admin → Expense sources
-              </Link>
-              .
+              {showAdminSourcesLink ? (
+                <>
+                  Configure environment variables, test OpenAI / Anthropic
+                  connectivity, and run usage sync from{" "}
+                  <Link
+                    href="/admin/sources"
+                    className="font-medium text-primary underline-offset-4 hover:underline"
+                  >
+                    Admin → Expense sources
+                  </Link>
+                  .
+                </>
+              ) : (
+                <>
+                  Vendor API keys, probes, and sync are configured by app admins
+                  (sidebar <span className="font-medium">Admin</span> → Expense
+                  sources).
+                </>
+              )}
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <Button asChild variant="secondary" size="sm">
-              <Link href="/admin/sources">Open expense sources</Link>
-            </Button>
+            {showAdminSourcesLink ? (
+              <Button asChild variant="secondary" size="sm">
+                <Link href="/admin/sources">Open expense sources</Link>
+              </Button>
+            ) : null}
           </CardContent>
         </Card>
       </section>

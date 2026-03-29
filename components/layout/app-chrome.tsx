@@ -10,6 +10,8 @@ import {
   Plus,
   Settings2,
   Unplug,
+  UserCircle,
+  Users,
   X,
 } from "lucide-react";
 import {
@@ -69,6 +71,10 @@ function NavIcon({ item }: { item: NavItem }) {
       return <Settings2 className={c} />;
     case "sources":
       return <Unplug className={c} />;
+    case "profile":
+      return <UserCircle className={c} />;
+    case "users":
+      return <Users className={c} />;
     default:
       return null;
   }
@@ -104,7 +110,13 @@ function NavLink({
   );
 }
 
-function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
+function SidebarContent({
+  onNavigate,
+  showAdminNav,
+}: {
+  onNavigate?: () => void;
+  showAdminNav: boolean;
+}) {
   return (
     <div className="flex h-full flex-col gap-6 p-4">
       <Link
@@ -140,19 +152,28 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
           <NavLink key={item.href} item={item} onNavigate={onNavigate} />
         ))}
       </nav>
-      <nav className="flex flex-col gap-1" aria-label="Administration">
-        <p className="px-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">
-          Admin
-        </p>
-        {ADMIN_NAV.map((item) => (
-          <NavLink key={item.href} item={item} onNavigate={onNavigate} />
-        ))}
-      </nav>
+      {showAdminNav ? (
+        <nav className="flex flex-col gap-1" aria-label="Administration">
+          <p className="px-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">
+            Admin
+          </p>
+          {ADMIN_NAV.map((item) => (
+            <NavLink key={item.href} item={item} onNavigate={onNavigate} />
+          ))}
+        </nav>
+      ) : null}
     </div>
   );
 }
 
-export function AppChrome({ children }: { children: React.ReactNode }) {
+export function AppChrome({
+  children,
+  showAdminNav = false,
+}: {
+  children: React.ReactNode;
+  /** When true, show Admin section (role=admin or default owner email). */
+  showAdminNav?: boolean;
+}) {
   const [mobileOpen, setMobileOpen] = useState(false);
   const crumbs = useBreadcrumbItems();
 
@@ -162,7 +183,7 @@ export function AppChrome({ children }: { children: React.ReactNode }) {
         className="hidden w-56 shrink-0 border-r border-sidebar-border bg-sidebar md:block"
         aria-label="Sidebar"
       >
-        <SidebarContent />
+        <SidebarContent showAdminNav={showAdminNav} />
       </aside>
 
       {mobileOpen ? (
@@ -185,7 +206,10 @@ export function AppChrome({ children }: { children: React.ReactNode }) {
                 <X className="size-5" />
               </Button>
             </div>
-            <SidebarContent onNavigate={() => setMobileOpen(false)} />
+            <SidebarContent
+              showAdminNav={showAdminNav}
+              onNavigate={() => setMobileOpen(false)}
+            />
           </div>
         </div>
       ) : null}
@@ -225,7 +249,7 @@ export function AppChrome({ children }: { children: React.ReactNode }) {
               {crumbs.find((c) => c.current)?.label ?? "Norfolk AI"}
             </span>
             <div className="ml-auto">
-              <UserButton />
+              <UserButton userProfileUrl="/user-profile" />
             </div>
           </div>
         </header>

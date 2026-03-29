@@ -13,6 +13,9 @@ export default function SignInPage() {
           </p>
         </div>
         <SignIn
+          path="/sign-in"
+          routing="path"
+          signUpUrl="/sign-up"
           appearance={{
             elements: {
               rootBox: "shadow-none",

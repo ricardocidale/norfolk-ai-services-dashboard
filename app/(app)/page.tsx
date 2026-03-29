@@ -1,6 +1,7 @@
 import { DashboardApp } from "@/components/dashboard/dashboard-app";
 import type { DashboardSnapshot } from "@/components/dashboard/dashboard-app";
 import { SetupNotice } from "@/components/setup-notice";
+import { isAppAdmin } from "@/lib/admin/is-app-admin";
 import { getVendorSpendAnalytics } from "@/lib/analytics/vendor-spend";
 import { prisma } from "@/lib/db";
 import { compareProviderSpendDesc } from "@/lib/sort-vendors";
@@ -70,12 +71,18 @@ async function loadSnapshot(): Promise<DashboardSnapshot | null> {
 }
 
 export default async function Home() {
-  const initial = await loadSnapshot();
+  const [initial, showAdminSourcesLink] = await Promise.all([
+    loadSnapshot(),
+    isAppAdmin(),
+  ]);
 
   return (
     <div className="min-h-full">
       {initial ? (
-        <DashboardApp initial={initial} />
+        <DashboardApp
+          initial={initial}
+          showAdminSourcesLink={showAdminSourcesLink}
+        />
       ) : (
         <SetupNotice />
       )}

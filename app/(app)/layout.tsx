@@ -1,9 +1,11 @@
 import { AppChrome } from "@/components/layout/app-chrome";
+import { isAppAdmin } from "@/lib/admin/is-app-admin";
 
-export default function AppGroupLayout({
+export default async function AppGroupLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  return <AppChrome>{children}</AppChrome>;
+  const showAdminNav = await isAppAdmin();
+  return <AppChrome showAdminNav={showAdminNav}>{children}</AppChrome>;
 }

@@ -1,4 +1,6 @@
+import { auth } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
+import { isAppAdmin } from "@/lib/admin/is-app-admin";
 
 export const dynamic = "force-dynamic";
 
@@ -6,9 +8,17 @@ type Params = { params: Promise<{ provider: string }> };
 
 /**
  * Lightweight connectivity check (does not import spend).
- * Internal tool — protect this route if the app is ever exposed publicly.
+ * App admins only (same gate as /admin/*).
  */
 export async function POST(_request: Request, ctx: Params) {
+  const { userId } = await auth();
+  if (!userId) {
+    return NextResponse.json({ ok: false, message: "Unauthorized" }, { status: 401 });
+  }
+  if (!(await isAppAdmin())) {
+    return NextResponse.json({ ok: false, message: "Forbidden" }, { status: 403 });
+  }
+
   const { provider } = await ctx.params;
 
   if (provider === "openai") {
