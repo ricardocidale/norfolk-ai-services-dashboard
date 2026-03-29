@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Fragment, useState } from "react";
@@ -111,11 +112,24 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
         onClick={onNavigate}
         className="group flex items-center gap-3 rounded-lg px-1 py-1 text-sm font-semibold tracking-tight text-sidebar-foreground transition-[color,transform] duration-200 hover:text-primary group-hover:translate-x-0.5 motion-reduce:group-hover:translate-x-0"
       >
-        <img
-          src="/logo-icone-azul.svg"
-          alt="Norfolk AI"
-          className="size-6 shrink-0"
-        />
+        <span className="relative size-6 shrink-0" aria-hidden>
+          <Image
+            src="/logo-icone-azul.svg"
+            alt=""
+            width={24}
+            height={24}
+            className="size-6 dark:hidden"
+            unoptimized
+          />
+          <Image
+            src="/logo-icone-branco.svg"
+            alt=""
+            width={24}
+            height={24}
+            className="absolute inset-0 size-6 hidden dark:block"
+            unoptimized
+          />
+        </span>
         Norfolk AI Expense Pulse
       </Link>
       <nav className="flex flex-col gap-1" aria-label="Main">
