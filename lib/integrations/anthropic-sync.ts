@@ -1,6 +1,7 @@
 import type { BillingAccount } from "@prisma/client";
 import Decimal from "decimal.js";
 import { prisma } from "@/lib/db";
+import { SyncWriteBatch } from "@/lib/integrations/sync-prisma-batch";
 import {
   defaultSyncRangeEnd,
   defaultSyncRangeStart,
@@ -395,6 +396,7 @@ export async function syncAnthropicUsage(options: {
 
   let imported = 0;
   const costDaysSeen = new Set<string>();
+  const batch = new SyncWriteBatch(prisma);
 
   for (const bucket of costBuckets) {
     const times = parseBucketTimes(bucket);
@@ -420,49 +422,55 @@ export async function syncAnthropicUsage(options: {
     const externalRef = `anthropic-cost-${dayKey}`;
     const amountStr = dayUsd.gt(0) ? dayUsd.toFixed(4) : "0";
 
-    await prisma.expense.upsert({
-      where: {
-        provider_externalRef: { provider: "ANTHROPIC", externalRef },
-      },
-      create: {
-        provider: "ANTHROPIC",
-        billingAccount: options.billingAccount,
-        amount: amountStr,
-        currency: "USD",
-        incurredAt: times.start,
-        periodStart: times.start,
-        periodEnd: times.end,
-        label:
-          dayUsd.gt(0)
-            ? "Anthropic API cost + message usage (Admin API sync)"
-            : "Anthropic message usage — no cost bucket (Admin API sync)",
-        source: "anthropic_admin_api",
-        externalRef,
-        notes,
-      },
-      update: {
-        amount: amountStr,
-        currency: "USD",
-        periodStart: times.start,
-        periodEnd: times.end,
-        billingAccount: options.billingAccount,
-        notes,
-        label:
-          dayUsd.gt(0)
-            ? "Anthropic API cost + message usage (Admin API sync)"
-            : "Anthropic message usage — no cost bucket (Admin API sync)",
-      },
-    });
+    await batch.addAndFlush(
+      prisma.expense.upsert({
+        where: {
+          provider_externalRef: { provider: "ANTHROPIC", externalRef },
+        },
+        create: {
+          provider: "ANTHROPIC",
+          billingAccount: options.billingAccount,
+          amount: amountStr,
+          currency: "USD",
+          incurredAt: times.start,
+          periodStart: times.start,
+          periodEnd: times.end,
+          label:
+            dayUsd.gt(0)
+              ? "Anthropic API cost + message usage (Admin API sync)"
+              : "Anthropic message usage — no cost bucket (Admin API sync)",
+          source: "anthropic_admin_api",
+          externalRef,
+          notes,
+        },
+        update: {
+          amount: amountStr,
+          currency: "USD",
+          periodStart: times.start,
+          periodEnd: times.end,
+          billingAccount: options.billingAccount,
+          notes,
+          label:
+            dayUsd.gt(0)
+              ? "Anthropic API cost + message usage (Admin API sync)"
+              : "Anthropic message usage — no cost bucket (Admin API sync)",
+        },
+      }),
+    );
 
-    await prisma.expense.deleteMany({
-      where: {
-        provider: "ANTHROPIC",
-        externalRef: `anthropic-usage-${dayKey}`,
-      },
-    });
+    await batch.addAndFlush(
+      prisma.expense.deleteMany({
+        where: {
+          provider: "ANTHROPIC",
+          externalRef: `anthropic-usage-${dayKey}`,
+        },
+      }),
+    );
 
     imported += 1;
   }
+
+  await batch.flush();
 
   for (const [dayKey, usage] of usageMap) {
     if (costDaysSeen.has(dayKey) || totalTokens(usage) === 0) continue;
@@ -471,32 +479,36 @@ export async function syncAnthropicUsage(options: {
     const nextDay = new Date(dayDate.getTime() + DAY_MS);
     const externalRef = `anthropic-usage-${dayKey}`;
 
-    await prisma.expense.upsert({
-      where: {
-        provider_externalRef: { provider: "ANTHROPIC", externalRef },
-      },
-      create: {
-        provider: "ANTHROPIC",
-        billingAccount: options.billingAccount,
-        amount: "0",
-        currency: "USD",
-        incurredAt: dayDate,
-        periodStart: dayDate,
-        periodEnd: nextDay,
-        label: "Anthropic message usage only (Admin API sync)",
-        source: "anthropic_admin_api",
-        externalRef,
-        notes: usageNotes(usage),
-      },
-      update: {
-        billingAccount: options.billingAccount,
-        periodStart: dayDate,
-        periodEnd: nextDay,
-        notes: usageNotes(usage),
-      },
-    });
+    await batch.addAndFlush(
+      prisma.expense.upsert({
+        where: {
+          provider_externalRef: { provider: "ANTHROPIC", externalRef },
+        },
+        create: {
+          provider: "ANTHROPIC",
+          billingAccount: options.billingAccount,
+          amount: "0",
+          currency: "USD",
+          incurredAt: dayDate,
+          periodStart: dayDate,
+          periodEnd: nextDay,
+          label: "Anthropic message usage only (Admin API sync)",
+          source: "anthropic_admin_api",
+          externalRef,
+          notes: usageNotes(usage),
+        },
+        update: {
+          billingAccount: options.billingAccount,
+          periodStart: dayDate,
+          periodEnd: nextDay,
+          notes: usageNotes(usage),
+        },
+      }),
+    );
     imported += 1;
   }
+
+  await batch.flush();
 
   await prisma.syncRun.create({
     data: {

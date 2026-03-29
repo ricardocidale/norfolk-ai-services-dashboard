@@ -1,6 +1,7 @@
 import type { BillingAccount } from "@prisma/client";
 import Decimal from "decimal.js";
 import { prisma } from "@/lib/db";
+import { SyncWriteBatch } from "@/lib/integrations/sync-prisma-batch";
 import {
   defaultSyncRangeEnd,
   defaultSyncRangeStart,
@@ -289,6 +290,7 @@ export async function syncOpenAIUsage(options: {
 
   let imported = 0;
   const costDaysSeen = new Set<string>();
+  const batch = new SyncWriteBatch(prisma);
 
   for (const bucket of allBuckets) {
     const bucketStart = bucket.start_time
@@ -317,49 +319,55 @@ export async function syncOpenAIUsage(options: {
     const externalRef = `openai-cost-${dayKey}`;
     const amountStr = dayTotal.gt(0) ? dayTotal.toFixed(4) : "0";
 
-    await prisma.expense.upsert({
-      where: {
-        provider_externalRef: { provider: "OPENAI", externalRef },
-      },
-      create: {
-        provider: "OPENAI",
-        billingAccount: options.billingAccount,
-        amount: amountStr,
-        currency,
-        incurredAt: bucketStart,
-        periodStart: bucketStart,
-        periodEnd: bucketEnd,
-        label:
-          dayTotal.gt(0)
-            ? "OpenAI organization costs + completions usage (API sync)"
-            : "OpenAI completions usage — no cost bucket (API sync)",
-        source: "openai_api",
-        externalRef,
-        notes,
-      },
-      update: {
-        amount: amountStr,
-        currency,
-        periodStart: bucketStart,
-        periodEnd: bucketEnd,
-        billingAccount: options.billingAccount,
-        notes,
-        label:
-          dayTotal.gt(0)
-            ? "OpenAI organization costs + completions usage (API sync)"
-            : "OpenAI completions usage — no cost bucket (API sync)",
-      },
-    });
+    await batch.addAndFlush(
+      prisma.expense.upsert({
+        where: {
+          provider_externalRef: { provider: "OPENAI", externalRef },
+        },
+        create: {
+          provider: "OPENAI",
+          billingAccount: options.billingAccount,
+          amount: amountStr,
+          currency,
+          incurredAt: bucketStart,
+          periodStart: bucketStart,
+          periodEnd: bucketEnd,
+          label:
+            dayTotal.gt(0)
+              ? "OpenAI organization costs + completions usage (API sync)"
+              : "OpenAI completions usage — no cost bucket (API sync)",
+          source: "openai_api",
+          externalRef,
+          notes,
+        },
+        update: {
+          amount: amountStr,
+          currency,
+          periodStart: bucketStart,
+          periodEnd: bucketEnd,
+          billingAccount: options.billingAccount,
+          notes,
+          label:
+            dayTotal.gt(0)
+              ? "OpenAI organization costs + completions usage (API sync)"
+              : "OpenAI completions usage — no cost bucket (API sync)",
+        },
+      }),
+    );
 
-    await prisma.expense.deleteMany({
-      where: {
-        provider: "OPENAI",
-        externalRef: `openai-usage-${dayKey}`,
-      },
-    });
+    await batch.addAndFlush(
+      prisma.expense.deleteMany({
+        where: {
+          provider: "OPENAI",
+          externalRef: `openai-usage-${dayKey}`,
+        },
+      }),
+    );
 
     imported += 1;
   }
+
+  await batch.flush();
 
   for (const [dayKey, usage] of usageByDay) {
     if (costDaysSeen.has(dayKey) || totalTokens(usage) === 0) continue;
@@ -368,32 +376,36 @@ export async function syncOpenAIUsage(options: {
     const nextDay = new Date(dayDate.getTime() + DAY_MS);
     const externalRef = `openai-usage-${dayKey}`;
 
-    await prisma.expense.upsert({
-      where: {
-        provider_externalRef: { provider: "OPENAI", externalRef },
-      },
-      create: {
-        provider: "OPENAI",
-        billingAccount: options.billingAccount,
-        amount: "0",
-        currency: "USD",
-        incurredAt: dayDate,
-        periodStart: dayDate,
-        periodEnd: nextDay,
-        label: "OpenAI completions usage only (API sync)",
-        source: "openai_api",
-        externalRef,
-        notes: usageNotes(usage),
-      },
-      update: {
-        billingAccount: options.billingAccount,
-        periodStart: dayDate,
-        periodEnd: nextDay,
-        notes: usageNotes(usage),
-      },
-    });
+    await batch.addAndFlush(
+      prisma.expense.upsert({
+        where: {
+          provider_externalRef: { provider: "OPENAI", externalRef },
+        },
+        create: {
+          provider: "OPENAI",
+          billingAccount: options.billingAccount,
+          amount: "0",
+          currency: "USD",
+          incurredAt: dayDate,
+          periodStart: dayDate,
+          periodEnd: nextDay,
+          label: "OpenAI completions usage only (API sync)",
+          source: "openai_api",
+          externalRef,
+          notes: usageNotes(usage),
+        },
+        update: {
+          billingAccount: options.billingAccount,
+          periodStart: dayDate,
+          periodEnd: nextDay,
+          notes: usageNotes(usage),
+        },
+      }),
+    );
     imported += 1;
   }
+
+  await batch.flush();
 
   await prisma.syncRun.create({
     data: {

@@ -139,6 +139,7 @@ All JSON APIs use `Content-Type: application/json` unless noted. Amounts in JSON
 - **OpenAI sync:** Uses `OPENAI_ADMIN_KEY` or `OPENAI_API_KEY` and optional `OPENAI_ORG_ID` — org **costs** (paginated `next_page`) + **completions** usage; see `lib/integrations/openai-sync.ts`.
 - **Anthropic sync:** Requires **`ANTHROPIC_ADMIN_API_KEY`** (Console → Admin keys, `sk-ant-admin…`) for [Usage & Cost API](https://docs.anthropic.com/en/api/usage-cost-api). A normal `ANTHROPIC_API_KEY` cannot call `cost_report` / `usage_report`. Consumer **claude.ai** billing is not available via this API — use manual rows for that.
 - **Long syncs:** `POST /api/sync/openai` and `…/anthropic` set `maxDuration = 120` (seconds) so 12‑month backfills are less likely to hit the platform default timeout; your Vercel plan’s **maximum** still caps this.
+- **DB writes:** OpenAI / Anthropic sync buffer upserts + `deleteMany` into batched `prisma.$transaction` calls (`lib/integrations/sync-prisma-batch.ts`, `SYNC_DB_OPS_PER_TX = 32`) to cut round-trips to Postgres.
 
 ---
 
