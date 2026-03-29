@@ -136,8 +136,9 @@ All JSON APIs use `Content-Type: application/json` unless noted. Amounts in JSON
 - **Secrets:** Only via environment variables. See `.env.example`. Never commit `.env` or service account JSON.
 - **Clerk app admins:** The whole `/admin` UI and `/api/admin/*` routes require `publicMetadata.role === "admin"` (set in Clerk) or the default owner email `ricardo.cidale@norfolkgroup.io` (see `lib/admin/is-app-admin.ts`). End-user password reset is via Clerk’s sign-in **Forgot password** flow or the [Clerk Dashboard](https://dashboard.clerk.com).
 - **Avatar AI:** `GOOGLE_GENAI_API_KEY` (or `GEMINI_API_KEY`) powers optional Imagen generation on `/profile`.
-- **OpenAI sync:** Uses `OPENAI_ADMIN_KEY` or `OPENAI_API_KEY` and optional `OPENAI_ORG_ID` — org costs + completions usage; see `lib/integrations/openai-sync.ts`.
+- **OpenAI sync:** Uses `OPENAI_ADMIN_KEY` or `OPENAI_API_KEY` and optional `OPENAI_ORG_ID` — org **costs** (paginated `next_page`) + **completions** usage; see `lib/integrations/openai-sync.ts`.
 - **Anthropic sync:** Requires **`ANTHROPIC_ADMIN_API_KEY`** (Console → Admin keys, `sk-ant-admin…`) for [Usage & Cost API](https://docs.anthropic.com/en/api/usage-cost-api). A normal `ANTHROPIC_API_KEY` cannot call `cost_report` / `usage_report`. Consumer **claude.ai** billing is not available via this API — use manual rows for that.
+- **Long syncs:** `POST /api/sync/openai` and `…/anthropic` set `maxDuration = 120` (seconds) so 12‑month backfills are less likely to hit the platform default timeout; your Vercel plan’s **maximum** still caps this.
 
 ---
 
