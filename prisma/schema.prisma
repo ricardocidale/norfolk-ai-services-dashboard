@@ -1,5 +1,7 @@
 generator client {
   provider = "prisma-client-js"
+  // Outside node_modules so Windows AV / Node cannot lock the default query engine path during generate.
+  output   = "../lib/generated/prisma"
 }
 
 datasource db {

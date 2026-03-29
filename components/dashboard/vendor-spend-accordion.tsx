@@ -1,7 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import type { AiProvider, BillingAccount } from "@prisma/client";
 import { BILLING_ACCOUNT_LABEL } from "@/lib/billing-accounts";
 import { providerMeta } from "@/lib/providers-meta";
@@ -58,7 +58,25 @@ function cacheKey(
   return `${provider}|${from}|${to}`;
 }
 
-export function VendorSpendAccordion({
+export function VendorSpendAccordion(
+  props: {
+    rows: VendorSpendRow[];
+    from: string;
+    to: string;
+    emptyMessage: string;
+    /** Shown above the transaction list when a row is expanded (e.g. month breakdown). */
+    panelPrefix?: (provider: AiProvider) => ReactNode;
+  },
+) {
+  return (
+    <VendorSpendAccordionInner
+      key={`${props.from}|${props.to}`}
+      {...props}
+    />
+  );
+}
+
+function VendorSpendAccordionInner({
   rows,
   from,
   to,
@@ -69,7 +87,6 @@ export function VendorSpendAccordion({
   from: string;
   to: string;
   emptyMessage: string;
-  /** Shown above the transaction list when a row is expanded (e.g. month breakdown). */
   panelPrefix?: (provider: AiProvider) => ReactNode;
 }) {
   const [open, setOpen] = useState<string[]>([]);
@@ -119,11 +136,6 @@ export function VendorSpendAccordion({
     },
     [open, fetchLines],
   );
-
-  useEffect(() => {
-    setOpen([]);
-    setCache({});
-  }, [from, to]);
 
   const sortedRows = useMemo(
     () =>

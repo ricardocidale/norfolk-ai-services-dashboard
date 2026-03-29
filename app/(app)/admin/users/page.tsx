@@ -17,7 +17,8 @@ export default async function AdminUsersPage({
   const offset = Math.max(0, parseInt(sp.offset ?? "0", 10) || 0);
   const limit = 20;
 
-  const { data, totalCount } = await clerkClient.users.getUserList({
+  const client = await clerkClient();
+  const { data, totalCount } = await client.users.getUserList({
     limit,
     offset,
     orderBy: "-created_at",

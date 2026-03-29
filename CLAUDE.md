@@ -176,6 +176,7 @@ export const config = {
 - 2 migrations applied: `20250328180000_init` and `20260328120000_add_chatgpt_provider`
 - Seed: 5 expense records
 - `prisma.config.ts` at root replaces deprecated `package.json#prisma`
+- Prisma Client is generated to `lib/generated/prisma` (gitignored); `tsconfig.json` maps `@prisma/client` to that folder. `postinstall` runs `prisma generate`. This avoids Windows EPERM when replacing `node_modules/.prisma/client/query_engine-*.node` under AV or a running Node process.
 - Run seed: `npx dotenv -e .env -- npx tsx prisma/seed.ts`
 
 ---

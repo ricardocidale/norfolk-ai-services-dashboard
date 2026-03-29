@@ -151,7 +151,7 @@ npm run db:seed
 npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000). Production build: `npm run build` (runs `prisma generate` first).
+Open [http://localhost:3000](http://localhost:3000). Production build: `npm run build`. The Prisma client is generated on `npm install` (`postinstall`) into `lib/generated/prisma` (gitignored); run `npm run db:generate` after schema changes if you skip install scripts.
 
 ---
 

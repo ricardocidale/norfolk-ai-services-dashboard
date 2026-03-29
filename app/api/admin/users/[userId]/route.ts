@@ -39,6 +39,8 @@ export async function POST(request: Request, ctx: Params) {
 
   const { action } = parsed.data;
 
+  const clerk = await clerkClient();
+
   if (action === "delete") {
     if (parsed.data.confirmUserId !== targetId) {
       return NextResponse.json(
@@ -46,26 +48,26 @@ export async function POST(request: Request, ctx: Params) {
         { status: 400 },
       );
     }
-    await clerkClient.users.deleteUser(targetId);
+    await clerk.users.deleteUser(targetId);
     return NextResponse.json({ ok: true, message: "User deleted" });
   }
 
   try {
     switch (action) {
       case "ban":
-        await clerkClient.users.banUser(targetId);
+        await clerk.users.banUser(targetId);
         break;
       case "unban":
-        await clerkClient.users.unbanUser(targetId);
+        await clerk.users.unbanUser(targetId);
         break;
       case "lock":
-        await clerkClient.users.lockUser(targetId);
+        await clerk.users.lockUser(targetId);
         break;
       case "unlock":
-        await clerkClient.users.unlockUser(targetId);
+        await clerk.users.unlockUser(targetId);
         break;
       case "removeAvatar":
-        await clerkClient.users.deleteUserProfileImage(targetId);
+        await clerk.users.deleteUserProfileImage(targetId);
         break;
       default:
         return NextResponse.json({ error: "Unknown action" }, { status: 400 });
