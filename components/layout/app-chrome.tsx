@@ -6,7 +6,6 @@ import { Fragment, useState } from "react";
 import {
   LayoutDashboard,
   Menu,
-  PanelLeftClose,
   Plus,
   Settings2,
   Unplug,
@@ -110,9 +109,13 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
       <Link
         href="/"
         onClick={onNavigate}
-        className="group flex items-center gap-2 rounded-lg px-1 py-1 text-sm font-semibold tracking-tight text-sidebar-foreground transition-[color,transform] duration-200 hover:text-primary group-hover:translate-x-0.5 motion-reduce:group-hover:translate-x-0"
+        className="group flex items-center gap-3 rounded-lg px-1 py-1 text-sm font-semibold tracking-tight text-sidebar-foreground transition-[color,transform] duration-200 hover:text-primary group-hover:translate-x-0.5 motion-reduce:group-hover:translate-x-0"
       >
-        <PanelLeftClose className="size-4 text-primary transition-transform duration-200 group-hover:rotate-[-8deg] motion-reduce:group-hover:rotate-0" />
+        <img
+          src="/logo-ícone-azul.svg"
+          alt="Norfolk AI"
+          className="size-6 shrink-0"
+        />
         Norfolk AI Expense Pulse
       </Link>
       <nav className="flex flex-col gap-1" aria-label="Main">
