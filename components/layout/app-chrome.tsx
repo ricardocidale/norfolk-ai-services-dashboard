@@ -208,7 +208,7 @@ export function AppChrome({ children }: { children: React.ReactNode }) {
               {crumbs.find((c) => c.current)?.label ?? "Norfolk AI"}
             </span>
             <div className="ml-auto">
-              <UserButton afterSignOutUrl="/sign-in" />
+              <UserButton />
             </div>
           </div>
         </header>
