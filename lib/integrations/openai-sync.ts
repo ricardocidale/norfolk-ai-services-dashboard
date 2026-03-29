@@ -9,11 +9,13 @@ import {
 import type { SyncResult } from "./types";
 
 /**
- * Pulls organization cost buckets and completions token usage from OpenAI.
- * Prefer OPENAI_ADMIN_KEY (organization admin); OPENAI_API_KEY works if it has usage scope.
- * Optional OPENAI_ORG_ID header when the key belongs to multiple orgs.
+ * Organization costs + usage breakdowns: completions, embeddings, images.
+ * Prefer OPENAI_ADMIN_KEY; OPENAI_API_KEY works if scopes allow.
+ * Optional OPENAI_ORG_ID when the key belongs to multiple orgs.
  * @see https://platform.openai.com/docs/api-reference/usage/costs
  * @see https://platform.openai.com/docs/api-reference/usage/completions
+ * @see https://platform.openai.com/docs/api-reference/usage/embeddings
+ * @see https://platform.openai.com/docs/api-reference/usage/images
  */
 
 type CostBucket = {
@@ -40,6 +42,28 @@ type UsageAgg = {
   output_audio_tokens: number;
 };
 
+type EmbeddingsAgg = {
+  input_tokens: number;
+  num_model_requests: number;
+};
+
+type ImagesAgg = {
+  num_model_requests: number;
+};
+
+type OpenAiUsageNotes = {
+  source: "openai_org_usage";
+  completions: UsageAgg;
+  embeddings: EmbeddingsAgg;
+  images: ImagesAgg;
+};
+
+type UsageBucket = {
+  start_time?: number;
+  results?: unknown;
+  result?: unknown;
+};
+
 const DAY_MS = 24 * 60 * 60 * 1000;
 const MAX_COST_BUCKETS = 31;
 
@@ -57,6 +81,11 @@ function utcDayKey(d: Date): string {
   return d.toISOString().slice(0, 10);
 }
 
+function pickNum(row: Record<string, unknown>, key: string): number {
+  const v = row[key];
+  return typeof v === "number" && Number.isFinite(v) ? v : 0;
+}
+
 function emptyAgg(): UsageAgg {
   return {
     input_tokens: 0,
@@ -68,6 +97,14 @@ function emptyAgg(): UsageAgg {
   };
 }
 
+function emptyEmbeddingsAgg(): EmbeddingsAgg {
+  return { input_tokens: 0, num_model_requests: 0 };
+}
+
+function emptyImagesAgg(): ImagesAgg {
+  return { num_model_requests: 0 };
+}
+
 function addAgg(a: UsageAgg, r: CompletionsResult): void {
   a.input_tokens += r.input_tokens ?? 0;
   a.output_tokens += r.output_tokens ?? 0;
@@ -77,11 +114,59 @@ function addAgg(a: UsageAgg, r: CompletionsResult): void {
   a.output_audio_tokens += r.output_audio_tokens ?? 0;
 }
 
-function usageNotes(agg: UsageAgg): string {
-  return JSON.stringify({
-    source: "openai_completions_usage",
-    ...agg,
-  });
+function addEmbeddingsAgg(a: EmbeddingsAgg, r: Record<string, unknown>): void {
+  a.input_tokens += pickNum(r, "input_tokens");
+  a.num_model_requests += pickNum(r, "num_model_requests");
+}
+
+function addImagesAgg(a: ImagesAgg, r: Record<string, unknown>): void {
+  a.num_model_requests += pickNum(r, "num_model_requests");
+}
+
+function bucketResultRows(bucket: UsageBucket): Record<string, unknown>[] {
+  const r = bucket.results ?? bucket.result;
+  if (!Array.isArray(r)) return [];
+  return r.filter(
+    (x): x is Record<string, unknown> =>
+      x != null && typeof x === "object" && !Array.isArray(x),
+  );
+}
+
+function usageNotesPayload(
+  completions: UsageAgg,
+  embeddings: EmbeddingsAgg,
+  images: ImagesAgg,
+): string {
+  const payload: OpenAiUsageNotes = {
+    source: "openai_org_usage",
+    completions,
+    embeddings,
+    images,
+  };
+  return JSON.stringify(payload);
+}
+
+function hasAnyOrgUsage(
+  c: UsageAgg,
+  e: EmbeddingsAgg,
+  i: ImagesAgg,
+): boolean {
+  return (
+    totalCompletionTokens(c) > 0 ||
+    e.input_tokens > 0 ||
+    e.num_model_requests > 0 ||
+    i.num_model_requests > 0
+  );
+}
+
+function totalCompletionTokens(agg: UsageAgg): number {
+  return (
+    agg.input_tokens +
+    agg.output_tokens +
+    agg.input_cached_tokens +
+    agg.input_audio_tokens +
+    agg.output_audio_tokens
+  );
 }
 
 function* timeChunks(
@@ -99,10 +184,6 @@ function* timeChunks(
   }
 }
 
-/**
- * OpenAI organization costs are paginated (`next_page` → `page`), same as completions usage.
- * Without paging, only the first `limit` buckets per window are returned — incomplete spend.
- */
 async function fetchCostBucketsChunk(
   headers: Record<string, string>,
   startSec: number,
@@ -135,7 +216,6 @@ async function fetchCostBucketsChunk(
   return mergeCostBucketsByDay(out);
 }
 
-/** If the API returns multiple rows for the same UTC day across pages, merge line items. */
 function mergeCostBucketsByDay(buckets: CostBucket[]): CostBucket[] {
   const map = new Map<string, CostBucket>();
   for (const b of buckets) {
@@ -159,12 +239,15 @@ function mergeCostBucketsByDay(buckets: CostBucket[]): CostBucket[] {
   return [...map.values()];
 }
 
-async function fetchAllCompletionsUsage(
+async function fetchOrganizationUsageIntoMap<T>(
   headers: Record<string, string>,
+  endpoint: "completions" | "embeddings" | "images",
   startSec: number,
   endSec: number,
-): Promise<Map<string, UsageAgg>> {
-  const byDay = new Map<string, UsageAgg>();
+  empty: () => T,
+  addRow: (agg: T, row: Record<string, unknown>) => void,
+): Promise<Map<string, T>> {
+  const byDay = new Map<string, T>();
 
   for (const { chunkStart, chunkEnd } of timeChunks(
     new Date(startSec * 1000),
@@ -177,7 +260,7 @@ async function fetchAllCompletionsUsage(
 
     do {
       const url = new URL(
-        "https://api.openai.com/v1/organization/usage/completions",
+        `https://api.openai.com/v1/organization/usage/${endpoint}`,
       );
       url.searchParams.set("start_time", String(c0));
       url.searchParams.set("end_time", String(c1));
@@ -189,14 +272,11 @@ async function fetchAllCompletionsUsage(
       const raw = await res.text();
       if (!res.ok) {
         throw new Error(
-          `OpenAI completions usage API ${res.status}: ${raw.slice(0, 400)}`,
+          `OpenAI ${endpoint} usage API ${res.status}: ${raw.slice(0, 400)}`,
         );
       }
       const parsed = JSON.parse(raw) as {
-        data?: Array<{
-          start_time?: number;
-          results?: CompletionsResult[];
-        }>;
+        data?: UsageBucket[];
         next_page?: string | null;
       };
 
@@ -208,10 +288,10 @@ async function fetchAllCompletionsUsage(
         const key = utcDayKey(bucketStart);
         let agg = byDay.get(key);
         if (!agg) {
-          agg = emptyAgg();
+          agg = empty();
           byDay.set(key, agg);
         }
-        for (const r of bucket.results ?? []) addAgg(agg, r);
+        for (const row of bucketResultRows(bucket)) addRow(agg, row);
       }
 
       page = parsed.next_page ?? null;
@@ -221,14 +301,17 @@ async function fetchAllCompletionsUsage(
   return byDay;
 }
 
-function totalTokens(agg: UsageAgg): number {
-  return (
-    agg.input_tokens +
-    agg.output_tokens +
-    agg.input_cached_tokens +
-    agg.input_audio_tokens +
-    agg.output_audio_tokens
-  );
+function getUsageTriplet(
+  dayKey: string,
+  completionsByDay: Map<string, UsageAgg>,
+  embeddingsByDay: Map<string, EmbeddingsAgg>,
+  imagesByDay: Map<string, ImagesAgg>,
+): { c: UsageAgg; e: EmbeddingsAgg; i: ImagesAgg } {
+  return {
+    c: completionsByDay.get(dayKey) ?? emptyAgg(),
+    e: embeddingsByDay.get(dayKey) ?? emptyEmbeddingsAgg(),
+    i: imagesByDay.get(dayKey) ?? emptyImagesAgg(),
+  };
 }
 
 export async function syncOpenAIUsage(options: {
@@ -252,10 +335,18 @@ export async function syncOpenAIUsage(options: {
   const startSec = Math.floor(start.getTime() / 1000);
   const endSec = Math.floor(end.getTime() / 1000);
   const headers = orgHeaders(apiKey);
+  const usageWarnings: string[] = [];
 
-  let usageByDay: Map<string, UsageAgg>;
+  let completionsByDay: Map<string, UsageAgg>;
   try {
-    usageByDay = await fetchAllCompletionsUsage(headers, startSec, endSec);
+    completionsByDay = await fetchOrganizationUsageIntoMap(
+      headers,
+      "completions",
+      startSec,
+      endSec,
+      emptyAgg,
+      (agg, row) => addAgg(agg, row as CompletionsResult),
+    );
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     return {
@@ -264,6 +355,36 @@ export async function syncOpenAIUsage(options: {
       imported: 0,
       provider: "OPENAI",
     };
+  }
+
+  let embeddingsByDay = new Map<string, EmbeddingsAgg>();
+  try {
+    embeddingsByDay = await fetchOrganizationUsageIntoMap(
+      headers,
+      "embeddings",
+      startSec,
+      endSec,
+      emptyEmbeddingsAgg,
+      addEmbeddingsAgg,
+    );
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    usageWarnings.push(`embeddings omitted: ${msg.slice(0, 200)}`);
+  }
+
+  let imagesByDay = new Map<string, ImagesAgg>();
+  try {
+    imagesByDay = await fetchOrganizationUsageIntoMap(
+      headers,
+      "images",
+      startSec,
+      endSec,
+      emptyImagesAgg,
+      addImagesAgg,
+    );
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    usageWarnings.push(`images omitted: ${msg.slice(0, 200)}`);
   }
 
   const allBuckets: CostBucket[] = [];
@@ -309,11 +430,17 @@ export async function syncOpenAIUsage(options: {
       if (r.amount?.currency) currency = r.amount.currency;
     }
 
-    const usage = usageByDay.get(dayKey) ?? emptyAgg();
-    const notes =
-      totalTokens(usage) > 0 ? usageNotes(usage) : null;
+    const { c, e, i } = getUsageTriplet(
+      dayKey,
+      completionsByDay,
+      embeddingsByDay,
+      imagesByDay,
+    );
+    const notes = hasAnyOrgUsage(c, e, i)
+      ? usageNotesPayload(c, e, i)
+      : null;
 
-    if (dayTotal.isZero() && totalTokens(usage) === 0) continue;
+    if (dayTotal.isZero() && !hasAnyOrgUsage(c, e, i)) continue;
 
     costDaysSeen.add(dayKey);
     const externalRef = `openai-cost-${dayKey}`;
@@ -334,8 +461,8 @@ export async function syncOpenAIUsage(options: {
           periodEnd: bucketEnd,
           label:
             dayTotal.gt(0)
-              ? "OpenAI organization costs + completions usage (API sync)"
-              : "OpenAI completions usage — no cost bucket (API sync)",
+              ? "OpenAI org cost + usage (completions / embeddings / images)"
+              : "OpenAI org usage — no cost bucket (API sync)",
           source: "openai_api",
           externalRef,
           notes,
@@ -349,8 +476,8 @@ export async function syncOpenAIUsage(options: {
           notes,
           label:
             dayTotal.gt(0)
-              ? "OpenAI organization costs + completions usage (API sync)"
-              : "OpenAI completions usage — no cost bucket (API sync)",
+              ? "OpenAI org cost + usage (completions / embeddings / images)"
+              : "OpenAI org usage — no cost bucket (API sync)",
         },
       }),
     );
@@ -369,8 +496,21 @@ export async function syncOpenAIUsage(options: {
 
   await batch.flush();
 
-  for (const [dayKey, usage] of usageByDay) {
-    if (costDaysSeen.has(dayKey) || totalTokens(usage) === 0) continue;
+  const usageDayKeys = new Set<string>([
+    ...completionsByDay.keys(),
+    ...embeddingsByDay.keys(),
+    ...imagesByDay.keys(),
+  ]);
+
+  for (const dayKey of usageDayKeys) {
+    if (costDaysSeen.has(dayKey)) continue;
+    const { c, e, i } = getUsageTriplet(
+      dayKey,
+      completionsByDay,
+      embeddingsByDay,
+      imagesByDay,
+    );
+    if (!hasAnyOrgUsage(c, e, i)) continue;
 
     const dayDate = new Date(`${dayKey}T00:00:00.000Z`);
     const nextDay = new Date(dayDate.getTime() + DAY_MS);
@@ -389,16 +529,16 @@ export async function syncOpenAIUsage(options: {
           incurredAt: dayDate,
           periodStart: dayDate,
           periodEnd: nextDay,
-          label: "OpenAI completions usage only (API sync)",
+          label: "OpenAI org usage only (API sync)",
           source: "openai_api",
           externalRef,
-          notes: usageNotes(usage),
+          notes: usageNotesPayload(c, e, i),
         },
         update: {
           billingAccount: options.billingAccount,
           periodStart: dayDate,
           periodEnd: nextDay,
-          notes: usageNotes(usage),
+          notes: usageNotesPayload(c, e, i),
         },
       }),
     );
@@ -407,11 +547,14 @@ export async function syncOpenAIUsage(options: {
 
   await batch.flush();
 
+  const warnSuffix =
+    usageWarnings.length > 0 ? ` Warnings: ${usageWarnings.join(" ")}` : "";
+
   await prisma.syncRun.create({
     data: {
       provider: "OPENAI",
       ok: true,
-      message: `Imported ${imported} row(s) (costs + completions usage).`,
+      message: `Imported ${imported} row(s) (costs + completions/embeddings/images usage).${warnSuffix}`,
       imported,
       finishedAt: new Date(),
     },
@@ -421,8 +564,8 @@ export async function syncOpenAIUsage(options: {
     ok: true,
     message:
       imported > 0
-        ? `Upserted ${imported} row(s) from OpenAI (costs and token usage).`
-        : "No cost or completions usage in range (check org key permissions).",
+        ? `Upserted ${imported} row(s) from OpenAI (costs + org usage).${warnSuffix}`
+        : `No cost or org usage in range (check org key permissions).${warnSuffix}`,
     imported,
     provider: "OPENAI",
   };
