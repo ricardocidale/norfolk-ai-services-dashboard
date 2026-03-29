@@ -112,13 +112,13 @@ All JSON APIs use `Content-Type: application/json` unless noted. Amounts in JSON
 
 | Method | Path | Description |
 | --- | --- | --- |
-| `GET` | `/api/expenses` | Query: `take` (max 500), optional `provider` (`AiProvider` enum). Returns `{ expenses }`. |
+| `GET` | `/api/expenses` | Query: `take` (max 500), optional `provider` (`AiProvider` enum), optional `from` / `to` (ISO datetimes, `incurredAt` filter; max range ~400 days). Returns `{ expenses }` (newest first). |
 | `POST` | `/api/expenses` | Body: expense create object (see schema below). Returns `{ expense }`. `409` on constraint violation. |
 | `PATCH` | `/api/expenses/[id]` | Partial update; same fields as create. `404` if missing. |
 | `DELETE` | `/api/expenses/[id]` | Deletes row. `404` if missing. |
 | `POST` | `/api/import` | Body: `{ "expenses": [ … ] }` — each item matches create schema. Returns `{ created, errors }`. |
 | `GET` | `/api/summary` | Totals and groupings + recent `SyncRun` rows. |
-| `GET` | `/api/analytics/vendor-spend` | Vendor breakdown: current UTC month (MTD), monthly grid for **M-1 … M-12**, and **cumulative** totals over those same 12 months (matches grid row totals; see `lib/analytics/vendor-spend.ts`). |
+| `GET` | `/api/analytics/vendor-spend` | Vendor breakdown: current UTC month (MTD), per-vendor amounts for each of **M-1 … M-12**, and **cumulative** totals over those twelve months. The dashboard uses tabs: current month (name + year), three prior months, the full **Prior 12 months** grid, then **Cumulative 12 months** (see `components/dashboard/vendor-spend-tables.tsx`). |
 | `POST` | `/api/admin/probe/openai` | **App admins only.** Checks `OPENAI_*` keys against the OpenAI models endpoint (no spend import). |
 | `POST` | `/api/admin/probe/anthropic` | **App admins only.** Checks `ANTHROPIC_API_KEY` against the Messages API (validation error = key accepted). |
 | `POST` | `/api/admin/probe/perplexity` | **App admins only.** Checks `PERPLEXITY_API_KEY` against the Perplexity API (no spend import). |

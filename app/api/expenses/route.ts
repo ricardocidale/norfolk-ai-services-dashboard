@@ -12,13 +12,47 @@ function parseProvider(v: string | null): AiProvider | undefined {
     : undefined;
 }
 
+function parseIsoBoundary(v: string | null): Date | undefined {
+  if (!v?.trim()) return undefined;
+  const d = new Date(v);
+  return Number.isNaN(d.getTime()) ? undefined : d;
+}
+
+const MAX_RANGE_MS = 400 * 24 * 60 * 60 * 1000;
+
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const take = Math.min(Number(searchParams.get("take") ?? "100"), 500);
   const provider = parseProvider(searchParams.get("provider"));
+  const from = parseIsoBoundary(searchParams.get("from"));
+  const to = parseIsoBoundary(searchParams.get("to"));
+
+  if (from && to && from > to) {
+    return NextResponse.json(
+      { error: "`from` must be before or equal to `to`." },
+      { status: 400 },
+    );
+  }
+  if (from && to && to.getTime() - from.getTime() > MAX_RANGE_MS) {
+    return NextResponse.json(
+      { error: "Date range too large (max ~400 days)." },
+      { status: 400 },
+    );
+  }
+
+  const incurredAt =
+    from || to
+      ? {
+          ...(from ? { gte: from } : {}),
+          ...(to ? { lte: to } : {}),
+        }
+      : undefined;
 
   const items = await prisma.expense.findMany({
-    where: provider ? { provider } : undefined,
+    where: {
+      ...(provider ? { provider } : {}),
+      ...(incurredAt ? { incurredAt } : {}),
+    },
     orderBy: { incurredAt: "desc" },
     take,
   });
