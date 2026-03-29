@@ -78,6 +78,10 @@ components/
 lib/
   nav-config.ts                   ← MAIN_NAV, ADMIN_NAV, BREADCRUMB_LABELS
   utils.ts                        ← cn() utility
+  db.ts                           ← Prisma client singleton
+  integrations/                   ← external API clients (OpenAI, Anthropic, etc.)
+  analytics/                      ← analytics helpers
+  validations/                    ← Zod schemas for API inputs and forms
 prisma/
   schema.prisma                   ← database schema
   seed.ts                         ← seed data (5 records)
