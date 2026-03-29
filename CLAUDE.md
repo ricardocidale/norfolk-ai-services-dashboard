@@ -122,7 +122,7 @@ docker-compose.yml                ← Local Postgres for dev
 - **Full table and create-body fields:** `README.md` → **HTTP API (summary)**.
 - **Shapes:** `lib/validations/expense.ts` and each `app/api/**/route.ts` handler (keep Zod, Prisma, and docs aligned).
 - **Route map** (handlers live under `app/api/`):
-  - Expenses: `GET`/`POST` `/api/expenses`, `PATCH`/`DELETE` `/api/expenses/[id]`
+  - Expenses: `GET`/`POST` `/api/expenses` (`GET`: optional `from`/`to` ISO, `provider`, `take`), `PATCH`/`DELETE` `/api/expenses/[id]`
   - Import: `POST` `/api/import`
   - Reporting: `GET` `/api/summary`, `GET` `/api/analytics/vendor-spend`
   - Admin UI: `/admin/*` — signed-in users with `publicMetadata.role === "admin"` or default owner email (`lib/admin/is-app-admin.ts`)
