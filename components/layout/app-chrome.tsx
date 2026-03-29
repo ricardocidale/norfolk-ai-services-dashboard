@@ -28,6 +28,7 @@ import {
   MAIN_NAV,
   type NavItem,
 } from "@/lib/nav-config";
+import { UserButton } from "@clerk/nextjs";
 
 function formatSegment(seg: string): string {
   return seg
@@ -51,8 +52,7 @@ function useBreadcrumbItems(): { href: string; label: string; current: boolean }
   for (let i = 0; i < segments.length; i++) {
     acc += `/${segments[i]}`;
     const isCurrent = i === segments.length - 1;
-    const label =
-      BREADCRUMB_LABELS[segments[i]] ?? formatSegment(segments[i]);
+    const label = BREADCRUMB_LABELS[segments[i]] ?? formatSegment(segments[i]);
     items.push({ href: acc, label, current: isCurrent });
   }
   return items;
@@ -113,7 +113,7 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
         className="group flex items-center gap-2 rounded-lg px-1 py-1 text-sm font-semibold tracking-tight text-sidebar-foreground transition-[color,transform] duration-200 hover:text-primary group-hover:translate-x-0.5 motion-reduce:group-hover:translate-x-0"
       >
         <PanelLeftClose className="size-4 text-primary transition-transform duration-200 group-hover:rotate-[-8deg] motion-reduce:group-hover:rotate-0" />
-        Norfolk AI spend
+        Norfolk AI Expense Pulse
       </Link>
       <nav className="flex flex-col gap-1" aria-label="Main">
         <p className="px-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">
@@ -207,6 +207,9 @@ export function AppChrome({ children }: { children: React.ReactNode }) {
             <span className="min-w-0 truncate text-sm font-medium text-foreground sm:hidden">
               {crumbs.find((c) => c.current)?.label ?? "Norfolk AI"}
             </span>
+            <div className="ml-auto">
+              <UserButton afterSignOutUrl="/sign-in" />
+            </div>
           </div>
         </header>
         <main className="flex-1">{children}</main>
