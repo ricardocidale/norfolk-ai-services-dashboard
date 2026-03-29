@@ -3,7 +3,12 @@
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import type { AiProvider, BillingAccount } from "@prisma/client";
-import { BILLING_ACCOUNT_LABEL } from "@/lib/billing-accounts";
+import { RefreshCw } from "lucide-react";
+import {
+  BILLING_ACCOUNT_LABEL,
+  BILLING_ACCOUNT_ORDER,
+} from "@/lib/billing-accounts";
+import { DEFAULT_SYNC_LOOKBACK_MONTHS } from "@/lib/integrations/sync-range";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -14,11 +19,21 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import type { VendorSpendAnalytics } from "@/lib/analytics/vendor-spend";
 import { providerMeta } from "@/lib/providers-meta";
+import { cn } from "@/lib/utils";
 import { ExpenseChart } from "./expense-chart";
 import { ExpenseList } from "./expense-list";
+import { VendorSyncFetchingBanner } from "./vendor-sync-fetching-banner";
 import { VendorSpendTables } from "./vendor-spend-tables";
 
 export type DashboardExpenseRow = {
@@ -51,8 +66,12 @@ export function DashboardApp({
 }) {
   const [snapshot, setSnapshot] = useState(initial);
   const [toast, setToast] = useState<string | null>(null);
+  const [syncBilling, setSyncBilling] =
+    useState<BillingAccount>("NORFOLK_GROUP");
+  const [removeSampleRows, setRemoveSampleRows] = useState(false);
+  const [vendorSyncBusy, setVendorSyncBusy] = useState(false);
 
-  const refresh = async () => {
+  const refresh = async (opts?: { silent?: boolean }) => {
     const [expRes, sumRes, vsRes] = await Promise.all([
       fetch("/api/expenses?take=120"),
       fetch("/api/summary"),
@@ -62,7 +81,7 @@ export function DashboardApp({
     const sumJson = await sumRes.json();
     const vsJson = await vsRes.json();
     if (!expRes.ok || !sumRes.ok || !vsRes.ok) {
-      setToast("Could not refresh data.");
+      if (!opts?.silent) setToast("Could not refresh data.");
       return;
     }
     setSnapshot({
@@ -79,8 +98,57 @@ export function DashboardApp({
       expenseCount: sumJson.expenseCount,
       vendorSpend: vsJson as VendorSpendAnalytics,
     });
-    setToast("Updated.");
-    setTimeout(() => setToast(null), 2000);
+    if (!opts?.silent) {
+      setToast("Updated.");
+      setTimeout(() => setToast(null), 2500);
+    }
+  };
+
+  const syncAllFromVendors = async () => {
+    setVendorSyncBusy(true);
+    setToast(null);
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        const el = document.getElementById("vendor-sync-fetching-banner");
+        if (!el) return;
+        const reduceMotion = window.matchMedia(
+          "(prefers-reduced-motion: reduce)",
+        ).matches;
+        el.scrollIntoView({
+          behavior: reduceMotion ? "auto" : "smooth",
+          block: "nearest",
+        });
+      });
+    });
+    try {
+      const end = new Date();
+      const start = new Date(end.getTime());
+      start.setUTCMonth(start.getUTCMonth() - DEFAULT_SYNC_LOOKBACK_MONTHS);
+      const res = await fetch("/api/admin/sync-all", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          billingAccount: syncBilling,
+          start: start.toISOString(),
+          end: end.toISOString(),
+          removeSampleRows,
+        }),
+      });
+      const j = (await res.json()) as {
+        ok?: boolean;
+        message?: string;
+        summary?: string;
+      };
+      if (!res.ok) {
+        setToast(j.message ?? "Vendor sync failed.");
+        return;
+      }
+      setToast(j.summary ?? "Vendor sync finished.");
+      await refresh({ silent: true });
+      setTimeout(() => setToast(null), 14000);
+    } finally {
+      setVendorSyncBusy(false);
+    }
   };
 
   const chartData = useMemo(
@@ -119,7 +187,19 @@ export function DashboardApp({
         <Separator />
       </header>
 
-      <section className="grid gap-4 sm:grid-cols-3">
+      <VendorSyncFetchingBanner
+        active={vendorSyncBusy}
+        className="sticky top-2 z-30 backdrop-blur-md"
+      />
+
+      <section
+        className={cn(
+          "grid gap-4 sm:grid-cols-3",
+          vendorSyncBusy &&
+            "motion-reduce:opacity-100 motion-reduce:blur-none opacity-[0.88] blur-[0.5px] transition-[opacity,filter] duration-300",
+        )}
+        aria-busy={vendorSyncBusy}
+      >
         <Card>
           <CardHeader className="pb-2">
             <CardDescription>Total recorded</CardDescription>
@@ -163,12 +243,81 @@ export function DashboardApp({
         </Card>
       </section>
 
-      <section className="space-y-4">
+      {showAdminSourcesLink ? (
+        <Card className="border-primary/25 bg-primary/5">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base">Pull latest vendor data</CardTitle>
+            <CardDescription>
+              Runs OpenAI and Anthropic API sync (12‑month window), then ChatGPT
+              and Perplexity env-based monthly rows. Refreshes the dashboard
+              tables below. Sample &quot;seed&quot; lines can be removed first.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-end">
+            <div className="space-y-2">
+              <Label htmlFor="dash-sync-billing">Billing account tag</Label>
+              <Select
+                value={syncBilling}
+                onValueChange={(v) => setSyncBilling(v as BillingAccount)}
+                disabled={vendorSyncBusy}
+              >
+                <SelectTrigger id="dash-sync-billing" className="w-[min(100%,320px)]">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {BILLING_ACCOUNT_ORDER.map((a) => (
+                    <SelectItem key={a} value={a}>
+                      {BILLING_ACCOUNT_LABEL[a]}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <label className="flex cursor-pointer items-center gap-2 text-sm text-muted-foreground">
+              <input
+                type="checkbox"
+                className="size-4 rounded border-input accent-primary"
+                checked={removeSampleRows}
+                disabled={vendorSyncBusy}
+                onChange={(e) => setRemoveSampleRows(e.target.checked)}
+              />
+              Remove sample (seed) expenses first
+            </label>
+            <Button
+              type="button"
+              disabled={vendorSyncBusy}
+              onClick={() => syncAllFromVendors()}
+              className="gap-2 sm:ml-auto"
+            >
+              <RefreshCw
+                className={`size-4 ${vendorSyncBusy ? "animate-spin" : ""}`}
+              />
+              {vendorSyncBusy ? "Syncing…" : "Sync vendors & refresh"}
+            </Button>
+          </CardContent>
+        </Card>
+      ) : null}
+
+      <section
+        className={cn(
+          "space-y-4",
+          vendorSyncBusy &&
+            "motion-reduce:opacity-100 motion-reduce:blur-none opacity-[0.88] blur-[0.5px] transition-[opacity,filter] duration-300",
+        )}
+        aria-busy={vendorSyncBusy}
+      >
         <h2 className="text-lg font-medium">Vendor tables</h2>
         <VendorSpendTables data={snapshot.vendorSpend} />
       </section>
 
-      <section className="space-y-4">
+      <section
+        className={cn(
+          "space-y-4",
+          vendorSyncBusy &&
+            "motion-reduce:opacity-100 motion-reduce:blur-none opacity-[0.88] blur-[0.5px] transition-[opacity,filter] duration-300",
+        )}
+        aria-busy={vendorSyncBusy}
+      >
         <h2 className="text-lg font-medium">Spend by provider</h2>
         <Card>
           <CardContent className="pt-6">

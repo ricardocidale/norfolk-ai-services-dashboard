@@ -149,7 +149,29 @@
  * Shared motion: use on buttons, nav links, and key controls.
  * motion-reduce respects OS preference.
  */
+@keyframes vendor-sync-indeterminate {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(320%);
+  }
+}
+
 @layer utilities {
+  .vendor-sync-progress-fill {
+    animation: vendor-sync-indeterminate 1.2s cubic-bezier(0.4, 0, 0.2, 1)
+      infinite;
+    width: 42%;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .vendor-sync-progress-fill {
+      animation: none;
+      width: 100%;
+      opacity: 0.45;
+    }
+  }
+
   .transition-interactive {
     transition-property: color, background-color, border-color, box-shadow,
       transform, opacity;
