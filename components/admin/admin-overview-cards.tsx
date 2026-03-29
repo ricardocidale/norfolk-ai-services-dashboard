@@ -26,6 +26,20 @@ export function AdminOverviewCards() {
 
       <Card>
         <CardHeader>
+          <CardTitle>Gmail invoice scanner</CardTitle>
+          <CardDescription>
+            Connect Gmail accounts to scan for AI vendor invoices and receipts.
+            Emails are parsed by Claude AI and presented for approval before
+            importing as expense records.
+          </CardDescription>
+          <Button asChild className="mt-4 w-fit" variant="secondary">
+            <Link href="/admin/email-scan">Open email scanner</Link>
+          </Button>
+        </CardHeader>
+      </Card>
+
+      <Card>
+        <CardHeader>
           <CardTitle>Users (Clerk)</CardTitle>
           <CardDescription>
             List users, ban or lock accounts, clear profile photos, or delete

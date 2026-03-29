@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation";
 import { Fragment, useState } from "react";
 import {
   LayoutDashboard,
+  Mail,
   Menu,
   Plus,
   Settings2,
@@ -75,6 +76,8 @@ function NavIcon({ item }: { item: NavItem }) {
       return <UserCircle className={c} />;
     case "users":
       return <Users className={c} />;
+    case "email-scan":
+      return <Mail className={c} />;
     default:
       return null;
   }

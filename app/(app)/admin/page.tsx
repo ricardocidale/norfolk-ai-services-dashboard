@@ -1,4 +1,5 @@
 import { AdminOverviewCards } from "@/components/admin/admin-overview-cards";
+import { DisplayPrefsCard } from "@/components/admin/display-prefs-card";
 
 export const dynamic = "force-dynamic";
 
@@ -13,6 +14,7 @@ export default function AdminOverviewPage() {
         </p>
       </div>
       <AdminOverviewCards />
+      <DisplayPrefsCard />
     </div>
   );
 }

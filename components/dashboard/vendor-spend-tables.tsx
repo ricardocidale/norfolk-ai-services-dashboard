@@ -3,8 +3,8 @@
 import type { AiProvider } from "@prisma/client";
 import type { MonthColumn, VendorSpendAnalytics } from "@/lib/analytics/vendor-spend";
 import {
-  rangeCumulativeWindow,
   rangeCurrentMonthMtd,
+  rangeRolling12,
   rangeUtcMonthKey,
 } from "@/lib/analytics/vendor-spend-ranges";
 import { VendorSpendAccordion } from "@/components/dashboard/vendor-spend-accordion";
@@ -56,7 +56,7 @@ function MonthBreakdownMini({
   return (
     <div className="overflow-x-auto rounded-md border bg-muted/15 text-xs">
       <p className="border-b px-2 py-1.5 font-medium text-muted-foreground">
-        Spend by month (UTC, M-1 → M-12)
+        Spend by month (UTC, rolling 12)
       </p>
       <Table>
         <TableHeader>
@@ -114,16 +114,13 @@ export function VendorSpendTables({ data }: { data: VendorSpendAnalytics }) {
   const withSpendCurrent = data.currentMonthByVendor.filter(
     (r) => Number(r.total) > 0,
   );
-  const withSpendRolling = data.rollingTotalByVendor.filter(
-    (r) => Number(r.total) > 0,
-  );
   const withSpendMatrix = data.monthlyMatrix.filter(
     (r) => Number(r.rowTotal) > 0,
   );
 
   const priorThree = data.priorMonthColumns.slice(0, 3);
   const currentRange = rangeCurrentMonthMtd(data.asOf);
-  const cumulativeRange = rangeCumulativeWindow(data);
+  const rolling12Range = rangeRolling12(data);
 
   const matrixByProvider = new Map<AiProvider, MatrixRow>(
     withSpendMatrix.map((r) => [r.provider, r]),
@@ -137,9 +134,9 @@ export function VendorSpendTables({ data }: { data: VendorSpendAnalytics }) {
           Each line is a vendor; use the chevron to load and view expense lines
           in that period. <strong>{data.currentMonthLabel}</strong> is
           month-to-date. The next three tabs are completed UTC months.{" "}
-          <strong>Prior 12 months</strong> includes a per-vendor month grid when
-          expanded. <strong>Cumulative 12 months</strong> matches the rolling
-          window.{" "}
+          <strong>Cumulative 12 months</strong> is the rolling window: current
+          month MTD plus the 11 completed months before it — expand a vendor for
+          the month‑by‑month grid.{" "}
           <span className="text-muted-foreground">{data.timezoneNote}</span>
         </CardDescription>
       </CardHeader>
@@ -158,9 +155,6 @@ export function VendorSpendTables({ data }: { data: VendorSpendAnalytics }) {
                 {fullMonthYearLabel(col.key)}
               </TabsTrigger>
             ))}
-            <TabsTrigger value="twelve" className="text-xs sm:text-sm">
-              Prior 12 months
-            </TabsTrigger>
             <TabsTrigger value="cumulative" className="text-xs sm:text-sm">
               Cumulative 12 months
             </TabsTrigger>
@@ -203,48 +197,31 @@ export function VendorSpendTables({ data }: { data: VendorSpendAnalytics }) {
             );
           })}
 
-          <TabsContent value="twelve" className="mt-0">
+          <TabsContent value="cumulative" className="mt-0">
             <p className="mb-3 text-sm text-muted-foreground">
-              Row totals are the twelve completed months before the current
-              month. Expand a vendor for the month-by-month grid and underlying
-              transactions.
+              Rolling 12 months: {data.currentMonthLabel} (MTD) plus the 11
+              completed months before it. Expand a vendor for the month‑by‑month
+              grid and underlying transactions.
             </p>
             <VendorSpendAccordion
-              rows={withSpendMatrix.map((r) => ({
+              rows={(data.rolling12ByVendor ?? []).map((r) => ({
                 provider: r.provider,
-                total: r.rowTotal,
-                count: r.rowCount,
+                total: r.total,
+                count: r.count,
               }))}
-              from={cumulativeRange.from}
-              to={cumulativeRange.to}
-              emptyMessage="No expenses in the twelve months before the current month."
+              from={rolling12Range.from}
+              to={rolling12Range.to}
+              emptyMessage="No expenses in the rolling 12‑month window."
               panelPrefix={(provider) => {
                 const row = matrixByProvider.get(provider);
                 if (!row) return null;
                 return (
                   <MonthBreakdownMini
                     row={row}
-                    columns={data.priorMonthColumns}
+                    columns={data.allMonthColumns}
                   />
                 );
               }}
-            />
-          </TabsContent>
-
-          <TabsContent value="cumulative" className="mt-0">
-            <p className="mb-3 text-sm text-muted-foreground">
-              Same twelve-month window as the rolling total (excludes current
-              month).
-            </p>
-            <VendorSpendAccordion
-              rows={withSpendRolling.map((r) => ({
-                provider: r.provider,
-                total: r.total,
-                count: r.count,
-              }))}
-              from={cumulativeRange.from}
-              to={cumulativeRange.to}
-              emptyMessage="No expenses in the twelve months before the current month."
             />
             <p className="mt-3 text-xs text-muted-foreground">
               Window (UTC):{" "}

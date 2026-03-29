@@ -1,5 +1,6 @@
 import type { AiProvider } from "@prisma/client";
 import { PROVIDER_META } from "@/lib/providers-meta";
+import { vendorBillingEmail } from "@/lib/vendor-billing-defaults";
 
 export type ExpenseSourceStatus = {
   providerId: AiProvider;
@@ -7,8 +8,8 @@ export type ExpenseSourceStatus = {
   syncType: "openai" | "anthropic" | "chatgpt" | "perplexity" | "manual";
   description: string;
   docsUrl?: string;
-  /** What must be set for API-backed sources */
-  requiredEnvSummary: string;
+  /** Human-readable billing email for this vendor (from vendor-billing-defaults) */
+  billingEmail: string;
   /** Whether minimum env is present to call vendor APIs */
   envSatisfied: boolean;
 };
@@ -28,62 +29,30 @@ export function getExpenseSourceStatuses(): ExpenseSourceStatus[] {
   const perplexityApiKey = envPresent("PERPLEXITY_API_KEY");
 
   return PROVIDER_META.map((p) => {
+    const base = {
+      providerId: p.id,
+      label: p.label,
+      description: p.description,
+      docsUrl: p.docsUrl,
+      billingEmail: vendorBillingEmail(p.id),
+    };
+
     if (p.sync === "openai") {
-      return {
-        providerId: p.id,
-        label: p.label,
-        syncType: "openai",
-        description: p.description,
-        docsUrl: p.docsUrl,
-        requiredEnvSummary:
-          "OPENAI_API_KEY or OPENAI_ADMIN_KEY; optional OPENAI_ORG_ID",
-        envSatisfied: openaiKey,
-      };
+      return { ...base, syncType: "openai" as const, envSatisfied: openaiKey };
     }
     if (p.sync === "anthropic") {
-      return {
-        providerId: p.id,
-        label: p.label,
-        syncType: "anthropic",
-        description: p.description,
-        docsUrl: p.docsUrl,
-        requiredEnvSummary:
-          "ANTHROPIC_ADMIN_API_KEY (sk-ant-admin…); ANTHROPIC_API_KEY only if it is an Admin key",
-        envSatisfied: anthropicKey,
-      };
+      return { ...base, syncType: "anthropic" as const, envSatisfied: anthropicKey };
     }
     if (p.sync === "chatgpt") {
-      return {
-        providerId: p.id,
-        label: p.label,
-        syncType: "chatgpt",
-        description: p.description,
-        docsUrl: p.docsUrl,
-        requiredEnvSummary:
-          "CHATGPT_MONTHLY_USD (optional CHATGPT_CURRENCY, CHATGPT_MONTHLY_LABEL)",
-        envSatisfied: chatgptConfigured,
-      };
+      return { ...base, syncType: "chatgpt" as const, envSatisfied: chatgptConfigured };
     }
     if (p.sync === "perplexity") {
       return {
-        providerId: p.id,
-        label: p.label,
-        syncType: "perplexity",
-        description: p.description,
-        docsUrl: p.docsUrl,
-        requiredEnvSummary:
-          "PERPLEXITY_API_KEY (probe; same secret as GitHub → also set on Vercel/host). PERPLEXITY_MONTHLY_USD for monthly sync.",
+        ...base,
+        syncType: "perplexity" as const,
         envSatisfied: perplexityMonthly || perplexityApiKey,
       };
     }
-    return {
-      providerId: p.id,
-      label: p.label,
-      syncType: "manual",
-      description: p.description,
-      docsUrl: p.docsUrl,
-      requiredEnvSummary: "Manual entry, CSV, or POST /api/import",
-      envSatisfied: true,
-    };
+    return { ...base, syncType: "manual" as const, envSatisfied: true };
   });
 }

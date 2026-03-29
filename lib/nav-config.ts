@@ -2,6 +2,7 @@
 export const BREADCRUMB_LABELS: Record<string, string> = {
   admin: "Admin",
   sources: "Expense sources",
+  "email-scan": "Email scanner",
   expenses: "Expenses",
   add: "Add manually",
   profile: "Profile",
@@ -12,7 +13,14 @@ export const BREADCRUMB_LABELS: Record<string, string> = {
 export type NavItem = {
   title: string;
   href: string;
-  icon: "dashboard" | "plus" | "admin" | "sources" | "profile" | "users";
+  icon:
+    | "dashboard"
+    | "plus"
+    | "admin"
+    | "sources"
+    | "profile"
+    | "users"
+    | "email-scan";
 };
 
 export const MAIN_NAV: NavItem[] = [
@@ -24,5 +32,6 @@ export const MAIN_NAV: NavItem[] = [
 export const ADMIN_NAV: NavItem[] = [
   { title: "Overview", href: "/admin", icon: "admin" },
   { title: "Expense sources", href: "/admin/sources", icon: "sources" },
+  { title: "Email scanner", href: "/admin/email-scan", icon: "email-scan" },
   { title: "Users", href: "/admin/users", icon: "users" },
 ];

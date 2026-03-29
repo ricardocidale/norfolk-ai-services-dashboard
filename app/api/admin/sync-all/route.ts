@@ -11,6 +11,7 @@ import {
   defaultSyncRangeEnd,
   defaultSyncRangeStart,
 } from "@/lib/integrations/sync-range";
+import { vendorBillingAccount } from "@/lib/vendor-billing-defaults";
 
 export const dynamic = "force-dynamic";
 /** OpenAI + Anthropic 12‑month parallel sync; allow headroom beyond a single-provider route. */
@@ -26,14 +27,14 @@ type StepResult = {
   imported: number;
 };
 
-function parseBillingAccount(v: unknown): BillingAccount {
+function parseBillingAccountOverride(v: unknown): BillingAccount | null {
   if (
     typeof v === "string" &&
     (Object.values(BillingAccount) as string[]).includes(v)
   ) {
     return v as BillingAccount;
   }
-  return "NORFOLK_GROUP";
+  return null;
 }
 
 export async function POST(request: Request) {
@@ -58,7 +59,10 @@ export async function POST(request: Request) {
     /* optional body */
   }
 
-  const billingAccount = parseBillingAccount(body.billingAccount);
+  const override = parseBillingAccountOverride(body.billingAccount);
+  const ba = (provider: Parameters<typeof vendorBillingAccount>[0]) =>
+    override ?? vendorBillingAccount(provider);
+
   const end = body.end ? new Date(body.end) : defaultSyncRangeEnd();
   const start = body.start
     ? new Date(body.start)
@@ -70,19 +74,21 @@ export async function POST(request: Request) {
     removedSampleRows = del.count;
   }
 
-  const rangeOpts = {
-    billingAccount,
-    startTime: start,
-    endTime: end,
-  };
-
   const [openaiR, anthropicR] = await Promise.all([
-    syncOpenAIUsage(rangeOpts),
-    syncAnthropicUsage(rangeOpts),
+    syncOpenAIUsage({
+      billingAccount: ba("OPENAI"),
+      startTime: start,
+      endTime: end,
+    }),
+    syncAnthropicUsage({
+      billingAccount: ba("ANTHROPIC"),
+      startTime: start,
+      endTime: end,
+    }),
   ]);
 
-  const chatgptR = await syncChatGPTSpend({ billingAccount });
-  const perplexityR = await syncPerplexitySpend({ billingAccount });
+  const chatgptR = await syncChatGPTSpend({ billingAccount: ba("CHATGPT") });
+  const perplexityR = await syncPerplexitySpend({ billingAccount: ba("PERPLEXITY") });
 
   const steps: StepResult[] = [
     {

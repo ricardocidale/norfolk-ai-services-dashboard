@@ -1,9 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { AiProvider, BillingAccount } from "@prisma/client";
 import { RefreshCw } from "lucide-react";
+import { getShowCharts } from "@/lib/dashboard-prefs";
 import {
   BILLING_ACCOUNT_LABEL,
   BILLING_ACCOUNT_ORDER,
@@ -66,10 +67,16 @@ export function DashboardApp({
 }) {
   const [snapshot, setSnapshot] = useState(initial);
   const [toast, setToast] = useState<string | null>(null);
-  const [syncBilling, setSyncBilling] =
-    useState<BillingAccount>("NORFOLK_GROUP");
+  const SYNC_AUTO = "__auto__";
+  const [syncBillingOverride, setSyncBillingOverride] = useState<
+    BillingAccount | typeof SYNC_AUTO
+  >(SYNC_AUTO);
   const [removeSampleRows, setRemoveSampleRows] = useState(false);
   const [vendorSyncBusy, setVendorSyncBusy] = useState(false);
+  const [showCharts, setShowChartsLocal] = useState(false);
+  useEffect(() => {
+    setShowChartsLocal(getShowCharts());
+  }, []);
 
   const refresh = async (opts?: { silent?: boolean }) => {
     const [expRes, sumRes, vsRes] = await Promise.all([
@@ -128,7 +135,9 @@ export function DashboardApp({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          billingAccount: syncBilling,
+          ...(syncBillingOverride !== SYNC_AUTO
+            ? { billingAccount: syncBillingOverride }
+            : {}),
           start: start.toISOString(),
           end: end.toISOString(),
           removeSampleRows,
@@ -162,7 +171,7 @@ export function DashboardApp({
   );
 
   return (
-    <div className="mx-auto flex w-full max-w-6xl flex-col gap-10 px-4 py-10 sm:px-6">
+    <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 py-8 sm:px-6">
       <header className="flex flex-col gap-3">
         <div className="flex flex-wrap items-center gap-2">
           <Badge variant="secondary" className="uppercase tracking-widest">
@@ -248,23 +257,30 @@ export function DashboardApp({
           <CardHeader className="pb-2">
             <CardTitle className="text-base">Pull latest vendor data</CardTitle>
             <CardDescription>
-              Runs OpenAI and Anthropic API sync (12‑month window), then ChatGPT
-              and Perplexity env-based monthly rows. Refreshes the dashboard
-              tables below. Sample &quot;seed&quot; lines can be removed first.
+              Each vendor uses its default billing email. Runs OpenAI and
+              Anthropic API sync (12-month window), then ChatGPT and Perplexity
+              env-based monthly rows. Sample &quot;seed&quot; rows can be removed
+              first.
             </CardDescription>
           </CardHeader>
           <CardContent className="flex flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-end">
             <div className="space-y-2">
-              <Label htmlFor="dash-sync-billing">Billing account tag</Label>
+              <Label htmlFor="dash-sync-billing">
+                Override billing account{" "}
+                <span className="font-normal text-muted-foreground">(optional)</span>
+              </Label>
               <Select
-                value={syncBilling}
-                onValueChange={(v) => setSyncBilling(v as BillingAccount)}
+                value={syncBillingOverride}
+                onValueChange={(v) =>
+                  setSyncBillingOverride(v as BillingAccount | typeof SYNC_AUTO)
+                }
                 disabled={vendorSyncBusy}
               >
                 <SelectTrigger id="dash-sync-billing" className="w-[min(100%,320px)]">
-                  <SelectValue />
+                  <SelectValue placeholder="Auto (per-vendor defaults)" />
                 </SelectTrigger>
                 <SelectContent>
+                  <SelectItem value={SYNC_AUTO}>Auto (per-vendor defaults)</SelectItem>
                   {BILLING_ACCOUNT_ORDER.map((a) => (
                     <SelectItem key={a} value={a}>
                       {BILLING_ACCOUNT_LABEL[a]}
@@ -310,58 +326,23 @@ export function DashboardApp({
         <VendorSpendTables data={snapshot.vendorSpend} />
       </section>
 
-      <section
-        className={cn(
-          "space-y-4",
-          vendorSyncBusy &&
-            "motion-reduce:opacity-100 motion-reduce:blur-none opacity-[0.88] blur-[0.5px] transition-[opacity,filter] duration-300",
-        )}
-        aria-busy={vendorSyncBusy}
-      >
-        <h2 className="text-lg font-medium">Spend by provider</h2>
-        <Card>
-          <CardContent className="pt-6">
-            <ExpenseChart data={chartData} />
-          </CardContent>
-        </Card>
-      </section>
-
-      <section className="space-y-4">
-        <h2 className="text-lg font-medium">Data sources</h2>
-        <Card className="border-dashed">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-base">Vendor APIs and imports</CardTitle>
-            <CardDescription>
-              {showAdminSourcesLink ? (
-                <>
-                  Configure environment variables, test OpenAI / Anthropic
-                  connectivity, and run usage sync from{" "}
-                  <Link
-                    href="/admin/sources"
-                    className="font-medium text-primary underline-offset-4 hover:underline"
-                  >
-                    Admin → Expense sources
-                  </Link>
-                  .
-                </>
-              ) : (
-                <>
-                  Vendor API keys, probes, and sync are configured by app admins
-                  (sidebar <span className="font-medium">Admin</span> → Expense
-                  sources).
-                </>
-              )}
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            {showAdminSourcesLink ? (
-              <Button asChild variant="secondary" size="sm">
-                <Link href="/admin/sources">Open expense sources</Link>
-              </Button>
-            ) : null}
-          </CardContent>
-        </Card>
-      </section>
+      {showCharts ? (
+        <section
+          className={cn(
+            "space-y-4",
+            vendorSyncBusy &&
+              "motion-reduce:opacity-100 motion-reduce:blur-none opacity-[0.88] blur-[0.5px] transition-[opacity,filter] duration-300",
+          )}
+          aria-busy={vendorSyncBusy}
+        >
+          <h2 className="text-lg font-medium">Spend by provider</h2>
+          <Card>
+            <CardContent className="pt-6">
+              <ExpenseChart data={chartData} />
+            </CardContent>
+          </Card>
+        </section>
+      ) : null}
 
       <section className="space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-3">

@@ -65,3 +65,35 @@ model SyncRun {
   message    String?
   imported   Int         @default(0)
 }
+
+model GmailConnection {
+  id           String    @id @default(cuid())
+  email        String    @unique
+  accessToken  String
+  refreshToken String
+  tokenExpiry  DateTime
+  lastSyncAt   DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+}
+
+model EmailScanResult {
+  id             String    @id @default(cuid())
+  gmailEmail     String
+  gmailMessageId String    @unique
+  subject        String
+  fromEmail      String
+  receivedAt     DateTime
+  parsedVendor   String?
+  parsedAmount   Decimal?  @db.Decimal(18, 4)
+  parsedCurrency String?
+  parsedDate     DateTime?
+  confidence     Float?
+  status         String    @default("PENDING")
+  expenseId      String?
+  rawSnippet     String?
+  createdAt      DateTime  @default(now())
+
+  @@index([gmailEmail])
+  @@index([status])
+}

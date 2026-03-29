@@ -1,12 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import type { BillingAccount } from "@prisma/client";
-import { BILLING_ACCOUNT_ORDER } from "@/lib/billing-accounts";
 import { DEFAULT_SYNC_LOOKBACK_MONTHS } from "@/lib/integrations/sync-range";
 import type { ExpenseSourceStatus } from "@/lib/admin/expense-sources";
-import { PROVIDER_META } from "@/lib/providers-meta";
-import { IntegrationPanel } from "@/components/dashboard/integration-panel";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -16,33 +12,47 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
+
+type ProbeKey = "openai" | "anthropic" | "perplexity";
+type SyncKey = "openai" | "anthropic" | "chatgpt" | "perplexity";
+
+function syncLabel(t: ExpenseSourceStatus["syncType"]): string {
+  switch (t) {
+    case "openai":
+      return "API sync";
+    case "anthropic":
+      return "API sync";
+    case "chatgpt":
+      return "Env monthly";
+    case "perplexity":
+      return "Env monthly";
+    default:
+      return "Manual / import";
+  }
+}
+
+function isSyncable(t: ExpenseSourceStatus["syncType"]): t is SyncKey {
+  return t !== "manual";
+}
+
+function isProbeable(t: ExpenseSourceStatus["syncType"]): t is ProbeKey {
+  return t === "openai" || t === "anthropic" || t === "perplexity";
+}
 
 export function ExpenseSourcesClient({
   initialStatuses,
 }: {
   initialStatuses: ExpenseSourceStatus[];
 }) {
-  const [syncBilling, setSyncBilling] = useState<BillingAccount>("NORFOLK_GROUP");
   const [busy, setBusy] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [probeBusy, setProbeBusy] = useState<string | null>(null);
   const [probeHint, setProbeHint] = useState<Record<string, string>>({});
 
-  const runSync = async (
-    provider: "openai" | "anthropic" | "chatgpt" | "perplexity",
-  ) => {
+  const runSync = async (provider: SyncKey) => {
     setBusy(provider);
     setToast(null);
     try {
-      const q = new URLSearchParams({ billingAccount: syncBilling });
       const end = new Date();
       const start = new Date(end.getTime());
       start.setUTCMonth(start.getUTCMonth() - DEFAULT_SYNC_LOOKBACK_MONTHS);
@@ -50,7 +60,7 @@ export function ExpenseSourcesClient({
         provider === "openai" || provider === "anthropic"
           ? { start: start.toISOString(), end: end.toISOString() }
           : {};
-      const res = await fetch(`/api/sync/${provider}?${q}`, {
+      const res = await fetch(`/api/sync/${provider}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
@@ -62,7 +72,7 @@ export function ExpenseSourcesClient({
     }
   };
 
-  const runProbe = async (probeKey: "openai" | "anthropic" | "perplexity") => {
+  const runProbe = async (probeKey: ProbeKey) => {
     setProbeBusy(probeKey);
     setToast(null);
     try {
@@ -81,7 +91,7 @@ export function ExpenseSourcesClient({
   };
 
   return (
-    <div className="space-y-10">
+    <div className="space-y-8">
       {toast ? (
         <p className="rounded-lg border border-primary/30 bg-primary/5 px-3 py-2 text-sm text-foreground">
           {toast}
@@ -90,151 +100,110 @@ export function ExpenseSourcesClient({
 
       <Card>
         <CardHeader>
-          <CardTitle>Source registry</CardTitle>
+          <CardTitle>Vendor registry</CardTitle>
           <CardDescription>
-            Each vendor maps to how spend enters the dashboard: automated API
-            sync, or manual entry and import. Variables in{" "}
-            <code className="text-xs">.env</code> apply locally; for production,
-            copy the same names into your host (e.g. Vercel) — GitHub Actions
-            secrets alone are not visible to the deployed app.
+            Each vendor is linked to a billing email and a data source. API keys
+            are configured in{" "}
+            <strong>Vercel Environment Variables</strong> — they are never stored
+            in this app or shown here.
           </CardDescription>
         </CardHeader>
-        <CardContent className="p-0 sm:px-6">
-          <div className="overflow-x-auto rounded-xl border sm:rounded-lg">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Vendor</TableHead>
-                  <TableHead>Source</TableHead>
-                  <TableHead>Environment</TableHead>
-                  <TableHead className="text-right">Verify</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {initialStatuses.map((row) => (
-                  <TableRow key={row.providerId}>
-                    <TableCell className="font-medium">{row.label}</TableCell>
-                    <TableCell>
-                      <Badge
-                        variant={
-                          row.syncType === "manual" ? "outline" : "secondary"
-                        }
-                        className="text-[10px] uppercase tracking-wide"
-                      >
-                        {row.syncType === "manual"
-                          ? "Manual / import"
-                          : row.syncType === "chatgpt" ||
-                              row.syncType === "perplexity"
-                            ? "Env monthly"
-                            : `${row.syncType} API`}
-                      </Badge>
-                      <p className="mt-1 max-w-md text-xs text-muted-foreground">
-                        {row.description}
-                      </p>
-                    </TableCell>
-                    <TableCell className="max-w-[240px] text-xs text-muted-foreground">
-                      {row.requiredEnvSummary}
-                      <div className="mt-1">
-                        <Badge
-                          variant={
-                            row.envSatisfied ? "secondary" : "destructive"
-                          }
-                          className="text-[10px]"
-                        >
-                          {row.envSatisfied ? "Configured" : "Missing env"}
-                        </Badge>
-                      </div>
-                    </TableCell>
-                    <TableCell className="text-right">
-                      {row.syncType === "openai" ? (
-                        <div className="flex flex-col items-end gap-1">
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant="outline"
-                            disabled={probeBusy === "openai"}
-                            onClick={() => runProbe("openai")}
-                          >
-                            {probeBusy === "openai"
-                              ? "Testing…"
-                              : "Test OpenAI API"}
-                          </Button>
-                          {probeHint.openai ? (
-                            <span className="max-w-[200px] text-[10px] text-muted-foreground">
-                              {probeHint.openai}
-                            </span>
-                          ) : null}
-                        </div>
-                      ) : row.syncType === "anthropic" ? (
-                        <div className="flex flex-col items-end gap-1">
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant="outline"
-                            disabled={probeBusy === "anthropic"}
-                            onClick={() => runProbe("anthropic")}
-                          >
-                            {probeBusy === "anthropic"
-                              ? "Testing…"
-                              : "Test Anthropic API"}
-                          </Button>
-                          {probeHint.anthropic ? (
-                            <span className="max-w-[200px] text-[10px] text-muted-foreground">
-                              {probeHint.anthropic}
-                            </span>
-                          ) : null}
-                        </div>
-                      ) : row.syncType === "perplexity" ? (
-                        <div className="flex flex-col items-end gap-1">
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant="outline"
-                            disabled={probeBusy === "perplexity"}
-                            onClick={() => runProbe("perplexity")}
-                          >
-                            {probeBusy === "perplexity"
-                              ? "Testing…"
-                              : "Test Perplexity API key"}
-                          </Button>
-                          {probeHint.perplexity ? (
-                            <span className="max-w-[200px] text-[10px] text-muted-foreground">
-                              {probeHint.perplexity}
-                            </span>
-                          ) : null}
-                        </div>
-                      ) : (
-                        <span className="text-xs text-muted-foreground">—</span>
-                      )}
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
+        <CardContent className="space-y-3 p-4 sm:p-6">
+          {initialStatuses.map((row) => (
+            <div
+              key={row.providerId}
+              className="flex flex-col gap-3 rounded-lg border p-4 sm:flex-row sm:items-center sm:gap-4"
+            >
+              <div className="min-w-0 flex-1 space-y-1.5">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-sm font-semibold leading-snug">
+                    {row.label}
+                  </span>
+                  <Badge
+                    variant={
+                      row.syncType === "manual" ? "outline" : "secondary"
+                    }
+                    className="text-[10px] uppercase tracking-wide"
+                  >
+                    {syncLabel(row.syncType)}
+                  </Badge>
+                  <span
+                    className="inline-flex items-center gap-1.5 text-xs"
+                    title={
+                      row.envSatisfied
+                        ? "API credentials detected in Vercel env"
+                        : "Missing credentials — set in Vercel Environment Variables"
+                    }
+                  >
+                    <span
+                      className={`inline-block size-2 rounded-full ${
+                        row.envSatisfied
+                          ? "bg-emerald-500"
+                          : "bg-destructive"
+                      }`}
+                      aria-hidden
+                    />
+                    <span className="text-muted-foreground">
+                      {row.envSatisfied ? "Connected" : "Not configured"}
+                    </span>
+                  </span>
+                </div>
+                <p className="text-xs leading-relaxed text-muted-foreground">
+                  {row.description}
+                </p>
+                <p className="text-xs text-muted-foreground/80">
+                  Billing account:{" "}
+                  <span className="font-medium text-foreground">
+                    {row.billingEmail}
+                  </span>
+                </p>
+              </div>
+
+              <div className="flex shrink-0 flex-wrap items-center gap-2">
+                {isProbeable(row.syncType) ? (
+                  <div className="flex flex-col items-end gap-1">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      disabled={probeBusy === row.syncType}
+                      onClick={() => runProbe(row.syncType as ProbeKey)}
+                    >
+                      {probeBusy === row.syncType ? "Testing…" : "Test API"}
+                    </Button>
+                    {probeHint[row.syncType] ? (
+                      <span className="max-w-[200px] text-right text-[10px] text-muted-foreground">
+                        {probeHint[row.syncType]}
+                      </span>
+                    ) : null}
+                  </div>
+                ) : null}
+                {isSyncable(row.syncType) ? (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="secondary"
+                    disabled={busy === row.syncType || !row.envSatisfied}
+                    onClick={() => runSync(row.syncType as SyncKey)}
+                  >
+                    {busy === row.syncType ? "Syncing…" : "Sync now"}
+                  </Button>
+                ) : null}
+                {row.docsUrl ? (
+                  <a
+                    href={row.docsUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-xs text-muted-foreground underline-offset-4 hover:underline"
+                  >
+                    Docs
+                  </a>
+                ) : null}
+              </div>
+            </div>
+          ))}
         </CardContent>
       </Card>
-
-      <section className="space-y-4">
-        <div>
-          <h2 className="text-lg font-medium">Sync from APIs</h2>
-          <p className="text-sm text-muted-foreground">
-            Pull usage into expenses when keys have the right scopes. Same
-            controls as before, now under Admin.
-          </p>
-        </div>
-        <IntegrationPanel
-          meta={PROVIDER_META}
-          billingAccounts={BILLING_ACCOUNT_ORDER}
-          syncBilling={syncBilling}
-          onSyncBillingChange={setSyncBilling}
-          onSyncOpenAI={() => runSync("openai")}
-          onSyncAnthropic={() => runSync("anthropic")}
-          onSyncChatGPT={() => runSync("chatgpt")}
-          onSyncPerplexity={() => runSync("perplexity")}
-          busy={busy}
-        />
-      </section>
     </div>
   );
 }

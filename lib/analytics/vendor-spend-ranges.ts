@@ -23,8 +23,8 @@ export function rangeUtcMonthKey(monthKey: string): { from: string; to: string }
   return { from: from.toISOString(), to: to.toISOString() };
 }
 
-/** Twelve completed months before current (matches rolling totals). */
-export function rangeCumulativeWindow(data: VendorSpendAnalytics): {
+/** Rolling 12: oldest prior month start through asOf (includes current MTD). */
+export function rangeRolling12(data: VendorSpendAnalytics): {
   from: string;
   to: string;
 } {

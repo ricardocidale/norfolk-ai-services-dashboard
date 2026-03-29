@@ -12,29 +12,33 @@ export type VendorSpendAnalytics = {
   asOf: string;
   timezoneNote: string;
   currentMonthLabel: string;
-  /** M-1 (left) through M-12 (right), UTC calendar months — excludes current month */
+  currentMonthKey: string;
+  /** M-1 (left) through M-11 (right), UTC calendar months — excludes current month */
   priorMonthColumns: MonthColumn[];
-  /** First instant of the oldest month in the grid (M-12) */
+  /** First instant of the oldest month in the rolling 12 window (M-11) */
   windowStart: string;
-  /** Last instant of the month before the current month (M-1) */
+  /** `asOf` — current month-to-date boundary */
   windowEnd: string;
   currentMonthByVendor: {
     provider: AiProvider;
     total: string;
     count: number;
   }[];
-  /** Cumulative per vendor: sum of the same 12 prior calendar months as the grid (excludes current month) */
-  rollingTotalByVendor: {
+  /** True rolling 12: current month MTD + 11 prior completed months */
+  rolling12ByVendor: {
     provider: AiProvider;
     total: string;
     count: number;
   }[];
+  /** Per-vendor month grid: current month + 11 prior months */
   monthlyMatrix: {
     provider: AiProvider;
     byMonth: Record<string, { total: string; count: number }>;
     rowTotal: string;
     rowCount: number;
   }[];
+  /** All month columns in display order: current month first, then M-1 … M-11 */
+  allMonthColumns: MonthColumn[];
 };
 
 function monthKeyUTC(d: Date): string {
@@ -42,12 +46,12 @@ function monthKeyUTC(d: Date): string {
 }
 
 /**
- * Twelve full calendar months **before** the current month, newest first.
- * Example: if today is March 2026 → Feb 2026, Jan 2026, Dec 2025, …, Mar 2025.
+ * Eleven full calendar months **before** the current month, newest first.
+ * Together with the current month these form the rolling-12 window.
  */
-export function priorTwelveMonthColumns(now: Date): MonthColumn[] {
+export function priorElevenMonthColumns(now: Date): MonthColumn[] {
   const cols: MonthColumn[] = [];
-  for (let i = 1; i <= 12; i++) {
+  for (let i = 1; i <= 11; i++) {
     const d = new Date(
       Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - i, 1, 0, 0, 0, 0),
     );
@@ -63,13 +67,6 @@ export function priorTwelveMonthColumns(now: Date): MonthColumn[] {
   return cols;
 }
 
-/** End of the UTC day on the last day of the month *before* `now`'s calendar month */
-function endOfMonthBeforeCurrentUTC(now: Date): Date {
-  return new Date(
-    Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 0, 23, 59, 59, 999),
-  );
-}
-
 export async function getVendorSpendAnalytics(
   nowInput: Date = new Date(),
 ): Promise<VendorSpendAnalytics> {
@@ -77,28 +74,39 @@ export async function getVendorSpendAnalytics(
   const cmStart = new Date(
     Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1, 0, 0, 0, 0),
   );
+  const cmKey = monthKeyUTC(cmStart);
 
-  const priorMonthCols = priorTwelveMonthColumns(now);
-  const oldestKey = priorMonthCols[11]?.key;
+  const priorMonthCols = priorElevenMonthColumns(now);
+  const oldestKey = priorMonthCols[priorMonthCols.length - 1]?.key;
   if (!oldestKey) {
-    throw new Error("priorTwelveMonthColumns must return 12 months");
+    throw new Error("priorElevenMonthColumns must return 11 months");
   }
   const [oy, om] = oldestKey.split("-").map(Number);
   const windowStart = new Date(Date.UTC(oy, om - 1, 1, 0, 0, 0, 0));
-  const windowEnd = endOfMonthBeforeCurrentUTC(now);
 
-  const currentMonthLabel = new Date(
-    Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1),
-  ).toLocaleString("en-US", {
+  const cmShortLabel = cmStart.toLocaleString("en-US", {
+    month: "short",
+    year: "2-digit",
+    timeZone: "UTC",
+  });
+  const currentMonthLabel = cmStart.toLocaleString("en-US", {
     month: "long",
     year: "numeric",
     timeZone: "UTC",
   });
 
+  const allMonthColumns: MonthColumn[] = [
+    { key: cmKey, label: cmShortLabel },
+    ...priorMonthCols,
+  ];
+
   const [priorExpenses, cmExpenses] = await Promise.all([
     prisma.expense.findMany({
       where: {
-        incurredAt: { gte: windowStart, lte: windowEnd },
+        incurredAt: {
+          gte: windowStart,
+          lt: cmStart,
+        },
       },
       select: { provider: true, amount: true, incurredAt: true },
     }),
@@ -112,13 +120,12 @@ export async function getVendorSpendAnalytics(
   const zeroAgg = (): Agg => ({ total: new Decimal(0), count: 0 });
 
   const cmByProv = new Map<AiProvider, Agg>();
-  const rollByProv = new Map<AiProvider, Agg>();
   const matrix = new Map<AiProvider, Map<string, Agg>>();
 
   for (const p of PROVIDER_ORDER) {
     cmByProv.set(p, zeroAgg());
-    rollByProv.set(p, zeroAgg());
     const monthMap = new Map<string, Agg>();
+    monthMap.set(cmKey, zeroAgg());
     for (const col of priorMonthCols) {
       monthMap.set(col.key, zeroAgg());
     }
@@ -127,11 +134,6 @@ export async function getVendorSpendAnalytics(
 
   for (const e of priorExpenses) {
     const amt = new Decimal(e.amount.toString());
-    const r = rollByProv.get(e.provider) ?? zeroAgg();
-    r.total = r.total.plus(amt);
-    r.count += 1;
-    rollByProv.set(e.provider, r);
-
     const mk = monthKeyUTC(e.incurredAt);
     const cell = matrix.get(e.provider)?.get(mk);
     if (cell) {
@@ -146,24 +148,16 @@ export async function getVendorSpendAnalytics(
     c.total = c.total.plus(amt);
     c.count += 1;
     cmByProv.set(e.provider, c);
+
+    const cell = matrix.get(e.provider)?.get(cmKey);
+    if (cell) {
+      cell.total = cell.total.plus(amt);
+      cell.count += 1;
+    }
   }
 
   const currentMonthByVendor = PROVIDER_ORDER.map((provider) => {
     const a = cmByProv.get(provider)!;
-    return {
-      provider,
-      total: a.total.toFixed(4),
-      count: a.count,
-    };
-  }).sort((x, y) =>
-    compareProviderSpendDesc(
-      { provider: x.provider, amount: Number(x.total) },
-      { provider: y.provider, amount: Number(y.total) },
-    ),
-  );
-
-  const rollingTotalByVendor = PROVIDER_ORDER.map((provider) => {
-    const a = rollByProv.get(provider)!;
     return {
       provider,
       total: a.total.toFixed(4),
@@ -181,7 +175,7 @@ export async function getVendorSpendAnalytics(
     let rowTotal = new Decimal(0);
     let rowCount = 0;
     const byMonth: Record<string, { total: string; count: number }> = {};
-    for (const col of priorMonthCols) {
+    for (const col of allMonthColumns) {
       const cell = monthMap.get(col.key)!;
       byMonth[col.key] = {
         total: cell.total.toFixed(4),
@@ -203,16 +197,26 @@ export async function getVendorSpendAnalytics(
     ),
   );
 
+  const rolling12ByVendor = monthlyMatrix
+    .filter((r) => Number(r.rowTotal) > 0)
+    .map((r) => ({
+      provider: r.provider,
+      total: r.rowTotal,
+      count: r.rowCount,
+    }));
+
   return {
     asOf: now.toISOString(),
     timezoneNote:
-      "The monthly grid uses twelve full UTC calendar months before the current month (current month is only on the first tab).",
+      "Rolling 12 months: current month (MTD) plus 11 completed UTC calendar months.",
     currentMonthLabel,
+    currentMonthKey: cmKey,
     priorMonthColumns: priorMonthCols,
+    allMonthColumns,
     windowStart: windowStart.toISOString(),
-    windowEnd: windowEnd.toISOString(),
+    windowEnd: now.toISOString(),
     currentMonthByVendor,
-    rollingTotalByVendor,
+    rolling12ByVendor,
     monthlyMatrix,
   };
 }
