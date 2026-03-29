@@ -67,7 +67,7 @@ app/
     page.tsx                      ← dashboard home
     admin/                        ← admin pages
     expenses/                     ← expense pages
-  api/                            ← API routes (see app/api/ for full HTTP contracts)
+  api/                            ← API routes (contracts: section HTTP API below + README)
   sign-in/[[...sign-in]]/page.tsx ← Clerk custom sign-in
   sign-up/[[...sign-up]]/page.tsx ← Clerk custom sign-up
   globals.css                     ← Tailwind v4 imports
@@ -88,7 +88,6 @@ lib/
   sdk-clients.ts                  ← OpenAI/Anthropic client construction from env
   billing-accounts.ts             ← billing account constants and mapping
   sort-vendors.ts                 ← vendor ordering helpers
-  (Other small modules may exist — search lib/ before duplicating)
 prisma/
   schema.prisma                   ← database schema
   seed.ts                         ← seed data (5 records)
@@ -108,6 +107,21 @@ next.config.ts                    ← ROOT level Next.js config
 docker-compose.yml                ← Local Postgres for dev
 .env.example                      ← Full env var template
 ```
+
+- Other files under `lib/` may exist — search `lib/` before duplicating logic.
+
+---
+
+## HTTP API (contracts)
+
+- **Full table and create-body fields:** `README.md` → **HTTP API (summary)**.
+- **Shapes:** `lib/validations/expense.ts` and each `app/api/**/route.ts` handler (keep Zod, Prisma, and docs aligned).
+- **Route map** (handlers live under `app/api/`):
+  - Expenses: `GET`/`POST` `/api/expenses`, `PATCH`/`DELETE` `/api/expenses/[id]`
+  - Import: `POST` `/api/import`
+  - Reporting: `GET` `/api/summary`, `GET` `/api/analytics/vendor-spend`
+  - Admin probe: `POST` `/api/admin/probe/[provider]` — `openai`, `anthropic`, `perplexity`
+  - Sync: `POST` `/api/sync/[provider]` — `openai`, `anthropic`, `chatgpt`, `perplexity` (query `billingAccount`; optional JSON body `start`/`end` and/or `month` per provider — see route implementation)
 
 ---
 

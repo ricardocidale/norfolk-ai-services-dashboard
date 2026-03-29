@@ -121,7 +121,8 @@ All JSON APIs use `Content-Type: application/json` unless noted. Amounts in JSON
 | `GET` | `/api/analytics/vendor-spend` | Vendor breakdown: current UTC month (MTD), monthly grid for **M-1 … M-12**, and **cumulative** totals over those same 12 months (matches grid row totals; see `lib/analytics/vendor-spend.ts`). |
 | `POST` | `/api/admin/probe/openai` | Checks `OPENAI_*` keys against the OpenAI models endpoint (no spend import). |
 | `POST` | `/api/admin/probe/anthropic` | Checks `ANTHROPIC_API_KEY` against the Messages API (validation error = key accepted). |
-| `POST` | `/api/sync/[provider]` | `provider`: `openai` \| `anthropic`. Query: `billingAccount` (`BillingAccount` enum, default `NORFOLK_GROUP`). Optional JSON body: `{ start?, end? }` (ISO datetimes). Returns sync result; `422` when sync reports failure. |
+| `POST` | `/api/admin/probe/perplexity` | Checks `PERPLEXITY_API_KEY` against the Perplexity API (no spend import). |
+| `POST` | `/api/sync/[provider]` | `provider`: `openai` \| `anthropic` \| `chatgpt` \| `perplexity`. Query: `billingAccount` (`BillingAccount` enum, default `NORFOLK_GROUP`). Optional JSON body: `{ start?, end? }` (ISO datetimes) for API-backed syncs; `chatgpt` / `perplexity` may use `{ month? }` (see `app/api/sync/[provider]/route.ts`). Returns sync result; `422` when sync reports failure. |
 
 **Create body fields** (see `expenseCreateSchema` in `lib/validations/expense.ts`): `provider`, `billingAccount`, `amount`, optional `currency`, `incurredAt`, `periodStart`, `periodEnd`, `label`, `notes`, `source`, `externalRef`. Enums must match Prisma `AiProvider` and `BillingAccount`.
 
