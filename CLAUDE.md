@@ -54,6 +54,7 @@ These are installed as dependencies for future use — do NOT assume they are ac
 - @elevenlabs/elevenlabs-js (voice)
 - Vitest (testing)
 - Sonner (toast notifications)
+- shadcn (CLI/registry tooling — no runtime imports, used via npx shadcn add)
 
 ---
 
@@ -82,6 +83,12 @@ lib/
   integrations/                   ← external API clients (OpenAI, Anthropic, etc.)
   analytics/                      ← analytics helpers
   validations/                    ← Zod schemas for API inputs and forms
+  admin/                          ← expense source registry helpers (admin UI/API)
+  providers-meta.ts               ← vendor labels, sync types, docs links
+  sdk-clients.ts                  ← OpenAI/Anthropic client construction from env
+  billing-accounts.ts             ← billing account constants and mapping
+  sort-vendors.ts                 ← vendor ordering helpers
+  (Other small modules may exist — search lib/ before duplicating)
 prisma/
   schema.prisma                   ← database schema
   seed.ts                         ← seed data (5 records)
