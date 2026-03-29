@@ -1,4 +1,5 @@
 import type { AiProvider } from "@prisma/client";
+import Decimal from "decimal.js";
 import { prisma } from "@/lib/db";
 import { PROVIDER_META } from "@/lib/providers-meta";
 import { compareProviderSpendDesc } from "@/lib/sort-vendors";
@@ -107,8 +108,8 @@ export async function getVendorSpendAnalytics(
     }),
   ]);
 
-  type Agg = { total: number; count: number };
-  const zeroAgg = (): Agg => ({ total: 0, count: 0 });
+  type Agg = { total: Decimal; count: number };
+  const zeroAgg = (): Agg => ({ total: new Decimal(0), count: 0 });
 
   const cmByProv = new Map<AiProvider, Agg>();
   const rollByProv = new Map<AiProvider, Agg>();
@@ -125,24 +126,24 @@ export async function getVendorSpendAnalytics(
   }
 
   for (const e of priorExpenses) {
-    const amt = Number(e.amount);
+    const amt = new Decimal(e.amount.toString());
     const r = rollByProv.get(e.provider) ?? zeroAgg();
-    r.total += amt;
+    r.total = r.total.plus(amt);
     r.count += 1;
     rollByProv.set(e.provider, r);
 
     const mk = monthKeyUTC(e.incurredAt);
     const cell = matrix.get(e.provider)?.get(mk);
     if (cell) {
-      cell.total += amt;
+      cell.total = cell.total.plus(amt);
       cell.count += 1;
     }
   }
 
   for (const e of cmExpenses) {
-    const amt = Number(e.amount);
+    const amt = new Decimal(e.amount.toString());
     const c = cmByProv.get(e.provider) ?? zeroAgg();
-    c.total += amt;
+    c.total = c.total.plus(amt);
     c.count += 1;
     cmByProv.set(e.provider, c);
   }
@@ -177,7 +178,7 @@ export async function getVendorSpendAnalytics(
 
   const monthlyMatrix = PROVIDER_ORDER.map((provider) => {
     const monthMap = matrix.get(provider)!;
-    let rowTotal = 0;
+    let rowTotal = new Decimal(0);
     let rowCount = 0;
     const byMonth: Record<string, { total: string; count: number }> = {};
     for (const col of priorMonthCols) {
@@ -186,7 +187,7 @@ export async function getVendorSpendAnalytics(
         total: cell.total.toFixed(4),
         count: cell.count,
       };
-      rowTotal += cell.total;
+      rowTotal = rowTotal.plus(cell.total);
       rowCount += cell.count;
     }
     return {

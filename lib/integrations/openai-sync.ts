@@ -1,5 +1,10 @@
 import type { BillingAccount } from "@prisma/client";
+import Decimal from "decimal.js";
 import { prisma } from "@/lib/db";
+import {
+  defaultSyncRangeEnd,
+  defaultSyncRangeStart,
+} from "@/lib/integrations/sync-range";
 import type { SyncResult } from "./types";
 
 /**
@@ -201,9 +206,8 @@ export async function syncOpenAIUsage(options: {
     };
   }
 
-  const end = options.endTime ?? new Date();
-  const start =
-    options.startTime ?? new Date(end.getTime() - 30 * 24 * 60 * 60 * 1000);
+  const end = options.endTime ?? defaultSyncRangeEnd();
+  const start = options.startTime ?? defaultSyncRangeStart(end);
   const startSec = Math.floor(start.getTime() / 1000);
   const endSec = Math.floor(end.getTime() / 1000);
   const headers = orgHeaders(apiKey);
@@ -255,11 +259,11 @@ export async function syncOpenAIUsage(options: {
       : end;
     const dayKey = utcDayKey(bucketStart);
     const results = bucket.results ?? [];
-    let dayTotal = 0;
+    let dayTotal = new Decimal(0);
     let currency = "USD";
     for (const r of results) {
       const v = r.amount?.value;
-      if (typeof v === "number") dayTotal += v;
+      if (typeof v === "number" && Number.isFinite(v)) dayTotal = dayTotal.plus(v);
       if (r.amount?.currency) currency = r.amount.currency;
     }
 
@@ -267,12 +271,11 @@ export async function syncOpenAIUsage(options: {
     const notes =
       totalTokens(usage) > 0 ? usageNotes(usage) : null;
 
-    if (dayTotal === 0 && totalTokens(usage) === 0) continue;
+    if (dayTotal.isZero() && totalTokens(usage) === 0) continue;
 
     costDaysSeen.add(dayKey);
     const externalRef = `openai-cost-${dayKey}`;
-    const amountStr =
-      dayTotal > 0 ? String(dayTotal.toFixed(4)) : "0";
+    const amountStr = dayTotal.gt(0) ? dayTotal.toFixed(4) : "0";
 
     await prisma.expense.upsert({
       where: {
@@ -287,7 +290,7 @@ export async function syncOpenAIUsage(options: {
         periodStart: bucketStart,
         periodEnd: bucketEnd,
         label:
-          dayTotal > 0
+          dayTotal.gt(0)
             ? "OpenAI organization costs + completions usage (API sync)"
             : "OpenAI completions usage — no cost bucket (API sync)",
         source: "openai_api",
@@ -302,7 +305,7 @@ export async function syncOpenAIUsage(options: {
         billingAccount: options.billingAccount,
         notes,
         label:
-          dayTotal > 0
+          dayTotal.gt(0)
             ? "OpenAI organization costs + completions usage (API sync)"
             : "OpenAI completions usage — no cost bucket (API sync)",
       },

@@ -3,6 +3,7 @@
 import { useState } from "react";
 import type { BillingAccount } from "@prisma/client";
 import { BILLING_ACCOUNT_ORDER } from "@/lib/billing-accounts";
+import { DEFAULT_SYNC_LOOKBACK_MONTHS } from "@/lib/integrations/sync-range";
 import type { ExpenseSourceStatus } from "@/lib/admin/expense-sources";
 import { PROVIDER_META } from "@/lib/providers-meta";
 import { IntegrationPanel } from "@/components/dashboard/integration-panel";
@@ -42,10 +43,17 @@ export function ExpenseSourcesClient({
     setToast(null);
     try {
       const q = new URLSearchParams({ billingAccount: syncBilling });
+      const end = new Date();
+      const start = new Date(end.getTime());
+      start.setUTCMonth(start.getUTCMonth() - DEFAULT_SYNC_LOOKBACK_MONTHS);
+      const body =
+        provider === "openai" || provider === "anthropic"
+          ? { start: start.toISOString(), end: end.toISOString() }
+          : {};
       const res = await fetch(`/api/sync/${provider}?${q}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({}),
+        body: JSON.stringify(body),
       });
       const j = (await res.json()) as { message?: string };
       setToast(j.message ?? (res.ok ? "Done." : "Sync failed."));

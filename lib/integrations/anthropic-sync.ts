@@ -1,5 +1,10 @@
 import type { BillingAccount } from "@prisma/client";
+import Decimal from "decimal.js";
 import { prisma } from "@/lib/db";
+import {
+  defaultSyncRangeEnd,
+  defaultSyncRangeStart,
+} from "@/lib/integrations/sync-range";
 import type { SyncResult } from "./types";
 
 /**
@@ -334,9 +339,8 @@ export async function syncAnthropicUsage(options: {
     };
   }
 
-  const end = options.endTime ?? new Date();
-  const start =
-    options.startTime ?? new Date(end.getTime() - 30 * DAY_MS);
+  const end = options.endTime ?? defaultSyncRangeEnd();
+  const start = options.startTime ?? defaultSyncRangeStart(end);
 
   let usageMap: Map<string, UsageAgg>;
   let costBuckets: Record<string, unknown>[];
@@ -378,19 +382,19 @@ export async function syncAnthropicUsage(options: {
       ? (results as Record<string, unknown>[])
       : [];
 
-    let dayUsd = 0;
+    let dayUsd = new Decimal(0);
     for (const r of list) {
-      dayUsd += dollarsFromCostResult(r);
+      dayUsd = dayUsd.plus(dollarsFromCostResult(r));
     }
 
     const usage = usageMap.get(dayKey) ?? emptyAgg();
     const notes = totalTokens(usage) > 0 ? usageNotes(usage) : null;
 
-    if (dayUsd === 0 && totalTokens(usage) === 0) continue;
+    if (dayUsd.isZero() && totalTokens(usage) === 0) continue;
 
     costDaysSeen.add(dayKey);
     const externalRef = `anthropic-cost-${dayKey}`;
-    const amountStr = dayUsd > 0 ? String(dayUsd.toFixed(4)) : "0";
+    const amountStr = dayUsd.gt(0) ? dayUsd.toFixed(4) : "0";
 
     await prisma.expense.upsert({
       where: {
@@ -405,7 +409,7 @@ export async function syncAnthropicUsage(options: {
         periodStart: times.start,
         periodEnd: times.end,
         label:
-          dayUsd > 0
+          dayUsd.gt(0)
             ? "Anthropic API cost + message usage (Admin API sync)"
             : "Anthropic message usage — no cost bucket (Admin API sync)",
         source: "anthropic_admin_api",
@@ -420,7 +424,7 @@ export async function syncAnthropicUsage(options: {
         billingAccount: options.billingAccount,
         notes,
         label:
-          dayUsd > 0
+          dayUsd.gt(0)
             ? "Anthropic API cost + message usage (Admin API sync)"
             : "Anthropic message usage — no cost bucket (Admin API sync)",
       },

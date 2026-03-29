@@ -21,14 +21,15 @@ export const PROVIDER_META: ProviderMeta[] = [
     id: "ANTHROPIC",
     label: "Anthropic (Claude API)",
     description:
-      "Claude API usage and USD cost via Admin API (cost_report + usage_report/messages). Claude.ai subscriptions: enter separately or use manual rows.",
+      "Claude API usage and USD cost via Admin API (cost_report + usage_report/messages). Sync defaults to the last 12 UTC months through now (aligns with dashboard tabs). Claude.ai consumer subscriptions are separate — manual rows.",
     sync: "anthropic",
     docsUrl: "https://docs.anthropic.com/en/api/usage-cost-api",
   },
   {
     id: "OPENAI",
     label: "OpenAI API",
-    description: "Chat Completions, embeddings, and org usage when admin key is available.",
+    description:
+      "Org costs + completions usage when an admin-capable key is set. Sync defaults to the last 12 UTC months through now.",
     sync: "openai",
     docsUrl: "https://platform.openai.com/docs",
   },
