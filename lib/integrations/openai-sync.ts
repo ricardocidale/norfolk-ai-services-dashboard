@@ -98,24 +98,64 @@ function* timeChunks(
   }
 }
 
+/**
+ * OpenAI organization costs are paginated (`next_page` → `page`), same as completions usage.
+ * Without paging, only the first `limit` buckets per window are returned — incomplete spend.
+ */
 async function fetchCostBucketsChunk(
   headers: Record<string, string>,
   startSec: number,
   endSec: number,
 ): Promise<CostBucket[]> {
-  const url = new URL("https://api.openai.com/v1/organization/costs");
-  url.searchParams.set("start_time", String(startSec));
-  url.searchParams.set("end_time", String(endSec));
-  url.searchParams.set("bucket_width", "1d");
-  url.searchParams.set("limit", String(MAX_COST_BUCKETS));
+  const out: CostBucket[] = [];
+  let page: string | null | undefined;
 
-  const res = await fetch(url.toString(), { headers, cache: "no-store" });
-  const raw = await res.text();
-  if (!res.ok) {
-    throw new Error(`OpenAI costs API ${res.status}: ${raw.slice(0, 400)}`);
+  do {
+    const url = new URL("https://api.openai.com/v1/organization/costs");
+    url.searchParams.set("start_time", String(startSec));
+    url.searchParams.set("end_time", String(endSec));
+    url.searchParams.set("bucket_width", "1d");
+    url.searchParams.set("limit", String(MAX_COST_BUCKETS));
+    if (page) url.searchParams.set("page", page);
+
+    const res = await fetch(url.toString(), { headers, cache: "no-store" });
+    const raw = await res.text();
+    if (!res.ok) {
+      throw new Error(`OpenAI costs API ${res.status}: ${raw.slice(0, 400)}`);
+    }
+    const parsed = JSON.parse(raw) as {
+      data?: CostBucket[];
+      next_page?: string | null;
+    };
+    out.push(...(Array.isArray(parsed.data) ? parsed.data : []));
+    page = parsed.next_page ?? null;
+  } while (page);
+
+  return mergeCostBucketsByDay(out);
+}
+
+/** If the API returns multiple rows for the same UTC day across pages, merge line items. */
+function mergeCostBucketsByDay(buckets: CostBucket[]): CostBucket[] {
+  const map = new Map<string, CostBucket>();
+  for (const b of buckets) {
+    const st = b.start_time;
+    if (st == null) continue;
+    const key = utcDayKey(new Date(st * 1000));
+    const prev = map.get(key);
+    if (!prev) {
+      map.set(key, {
+        start_time: b.start_time,
+        end_time: b.end_time,
+        results: [...(b.results ?? [])],
+      });
+      continue;
+    }
+    prev.results = [...(prev.results ?? []), ...(b.results ?? [])];
+    if (b.end_time != null) {
+      prev.end_time = Math.max(prev.end_time ?? 0, b.end_time);
+    }
   }
-  const parsed = JSON.parse(raw) as { data?: CostBucket[] };
-  return Array.isArray(parsed.data) ? parsed.data : [];
+  return [...map.values()];
 }
 
 async function fetchAllCompletionsUsage(

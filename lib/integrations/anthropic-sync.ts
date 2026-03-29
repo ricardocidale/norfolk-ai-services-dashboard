@@ -202,6 +202,30 @@ async function fetchCostPage(
   };
 }
 
+/** Combine cost buckets that share the same UTC calendar day (pagination / API edge cases). */
+function mergeAnthropicCostBucketsByDay(
+  buckets: Record<string, unknown>[],
+): Record<string, unknown>[] {
+  const map = new Map<string, Record<string, unknown>>();
+  for (const bucket of buckets) {
+    const times = parseBucketTimes(bucket);
+    if (!times) continue;
+    const key = utcDayKey(times.start);
+    const existing = map.get(key);
+    if (!existing) {
+      map.set(key, bucket);
+      continue;
+    }
+    const a = existing.results;
+    const b = bucket.results;
+    existing.results = [
+      ...(Array.isArray(a) ? a : []),
+      ...(Array.isArray(b) ? b : []),
+    ];
+  }
+  return [...map.values()];
+}
+
 async function fetchAllCostBuckets(
   apiKey: string,
   rangeStart: Date,
@@ -230,7 +254,7 @@ async function fetchAllCostBuckets(
     } while (page);
   }
 
-  return out;
+  return mergeAnthropicCostBucketsByDay(out);
 }
 
 async function fetchUsagePage(
