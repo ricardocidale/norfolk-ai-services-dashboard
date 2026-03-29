@@ -46,7 +46,7 @@ MIDJOURNEY, AWS_BEDROCK, MISTRAL, COHERE, OTHER
 - **Icons:** Lucide (primary)
 - **Finance:** decimal.js, date-fns
 - **Bundler:** Turbopack (next dev --turbopack)
-- **Node:** 20+ (confirm in Vercel project settings — @types/node is ^20)
+- **Node:** 20.x (`package.json` `engines.node`, `.nvmrc`; Vercel follows `engines` — @types/node is ^20)
 
 ### Installed but not yet wired into UI
 These are installed as dependencies for future use — do NOT assume they are active:
