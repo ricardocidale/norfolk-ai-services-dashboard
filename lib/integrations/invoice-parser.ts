@@ -1,4 +1,5 @@
-import Anthropic from "@anthropic-ai/sdk";
+import { z } from "zod";
+import { getAnthropicClient } from "@/lib/sdk-clients";
 import type { AiProvider } from "@prisma/client";
 
 const AI_PROVIDER_VALUES: AiProvider[] = [
@@ -20,6 +21,16 @@ const AI_PROVIDER_VALUES: AiProvider[] = [
   "OTHER",
 ];
 
+const parsedInvoiceSchema = z.object({
+  vendor: z.string().nullable().catch(null),
+  aiProvider: z.string().nullable().catch(null),
+  amount: z.string().nullable().catch(null),
+  currency: z.string().nullable().catch(null),
+  date: z.string().nullable().catch(null),
+  invoiceNumber: z.string().nullable().catch(null),
+  confidence: z.number().min(0).max(1).catch(0),
+});
+
 export type ParsedInvoice = {
   vendor: string | null;
   aiProvider: AiProvider | null;
@@ -29,13 +40,6 @@ export type ParsedInvoice = {
   invoiceNumber: string | null;
   confidence: number;
 };
-
-function getClient(): Anthropic | null {
-  const key =
-    process.env.ANTHROPIC_API_KEY ?? process.env.ANTHROPIC_ADMIN_API_KEY;
-  if (!key) return null;
-  return new Anthropic({ apiKey: key });
-}
 
 const SYSTEM_PROMPT = `You are an invoice/receipt data extractor. Given an email subject line, body text, and sender email, extract billing information.
 
@@ -50,15 +54,17 @@ Return ONLY valid JSON (no markdown, no code fences) with these fields:
 
 If the email is not actually an invoice/receipt for an AI service, set confidence below 0.3.`;
 
+const MAX_BODY_LENGTH = 4000;
+
 export async function parseInvoiceWithAI(
   subject: string,
   bodyText: string,
   fromEmail: string,
 ): Promise<ParsedInvoice | null> {
-  const client = getClient();
+  const client = getAnthropicClient();
   if (!client) return null;
 
-  const trimmedBody = bodyText.slice(0, 4000);
+  const trimmedBody = bodyText.slice(0, MAX_BODY_LENGTH);
 
   const response = await client.messages.create({
     model: "claude-sonnet-4-20250514",
@@ -77,7 +83,8 @@ export async function parseInvoiceWithAI(
   if (!text) return null;
 
   try {
-    const parsed = JSON.parse(text) as Record<string, unknown>;
+    const raw: unknown = JSON.parse(text);
+    const parsed = parsedInvoiceSchema.parse(raw);
 
     const aiProvider =
       typeof parsed.aiProvider === "string" &&
@@ -86,17 +93,13 @@ export async function parseInvoiceWithAI(
         : null;
 
     return {
-      vendor: typeof parsed.vendor === "string" ? parsed.vendor : null,
+      vendor: parsed.vendor,
       aiProvider,
-      amount: typeof parsed.amount === "string" ? parsed.amount : null,
-      currency: typeof parsed.currency === "string" ? parsed.currency : null,
-      date: typeof parsed.date === "string" ? parsed.date : null,
-      invoiceNumber:
-        typeof parsed.invoiceNumber === "string"
-          ? parsed.invoiceNumber
-          : null,
-      confidence:
-        typeof parsed.confidence === "number" ? parsed.confidence : 0,
+      amount: parsed.amount,
+      currency: parsed.currency,
+      date: parsed.date,
+      invoiceNumber: parsed.invoiceNumber,
+      confidence: parsed.confidence,
     };
   } catch {
     return null;

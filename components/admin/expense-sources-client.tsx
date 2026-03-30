@@ -5,13 +5,6 @@ import { DEFAULT_SYNC_LOOKBACK_MONTHS } from "@/lib/integrations/sync-range";
 import type { ExpenseSourceStatus } from "@/lib/admin/expense-sources";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
 
 type ProbeKey = "openai" | "anthropic" | "perplexity";
 type SyncKey = "openai" | "anthropic" | "chatgpt" | "perplexity";
@@ -91,25 +84,15 @@ export function ExpenseSourcesClient({
   };
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-4">
       {toast ? (
         <p className="rounded-lg border border-primary/30 bg-primary/5 px-3 py-2 text-sm text-foreground">
           {toast}
         </p>
       ) : null}
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Vendor registry</CardTitle>
-          <CardDescription>
-            Each vendor is linked to a billing email and a data source. API keys
-            are configured in{" "}
-            <strong>Vercel Environment Variables</strong> — they are never stored
-            in this app or shown here.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-3 p-4 sm:p-6">
-          {initialStatuses.map((row) => (
+      <div className="space-y-3">
+        {initialStatuses.map((row) => (
             <div
               key={row.providerId}
               className="flex flex-col gap-3 rounded-lg border p-4 sm:flex-row sm:items-center sm:gap-4"
@@ -201,9 +184,8 @@ export function ExpenseSourcesClient({
                 ) : null}
               </div>
             </div>
-          ))}
-        </CardContent>
-      </Card>
+        ))}
+      </div>
     </div>
   );
 }

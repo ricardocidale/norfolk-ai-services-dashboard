@@ -3,10 +3,14 @@ import { BillingAccount } from "@prisma/client";
 import { NextResponse } from "next/server";
 import { isAppAdmin } from "@/lib/admin/is-app-admin";
 import { prisma } from "@/lib/db";
-import { syncAnthropicUsage } from "@/lib/integrations/anthropic-sync";
+import {
+  syncAnthropicUsage,
+  norfolkAiAdminKey,
+} from "@/lib/integrations/anthropic-sync";
 import { syncChatGPTSpend } from "@/lib/integrations/chatgpt-sync";
 import { syncOpenAIUsage } from "@/lib/integrations/openai-sync";
 import { syncPerplexitySpend } from "@/lib/integrations/perplexity-sync";
+import type { SyncResult } from "@/lib/integrations/types";
 import {
   defaultSyncRangeEnd,
   defaultSyncRangeStart,
@@ -18,7 +22,12 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 export const runtime = "nodejs";
 
-type StepKey = "openai" | "anthropic" | "chatgpt" | "perplexity";
+type StepKey =
+  | "openai"
+  | "anthropic"
+  | "anthropic_norfolk_ai"
+  | "chatgpt"
+  | "perplexity";
 
 type StepResult = {
   key: StepKey;
@@ -74,7 +83,9 @@ export async function POST(request: Request) {
     removedSampleRows = del.count;
   }
 
-  const [openaiR, anthropicR] = await Promise.all([
+  const naiKey = norfolkAiAdminKey();
+
+  const apiSyncs: Promise<SyncResult>[] = [
     syncOpenAIUsage({
       billingAccount: ba("OPENAI"),
       startTime: start,
@@ -85,7 +96,21 @@ export async function POST(request: Request) {
       startTime: start,
       endTime: end,
     }),
-  ]);
+  ];
+
+  if (naiKey) {
+    apiSyncs.push(
+      syncAnthropicUsage({
+        billingAccount: override ?? "NORFOLK_AI",
+        startTime: start,
+        endTime: end,
+        apiKey: naiKey,
+        orgLabel: "nai",
+      }),
+    );
+  }
+
+  const [openaiR, anthropicR, anthropicNaiR] = await Promise.all(apiSyncs);
 
   const chatgptR = await syncChatGPTSpend({ billingAccount: ba("CHATGPT") });
   const perplexityR = await syncPerplexitySpend({ billingAccount: ba("PERPLEXITY") });
@@ -103,6 +128,25 @@ export async function POST(request: Request) {
       message: anthropicR.message,
       imported: anthropicR.imported,
     },
+  ];
+
+  if (anthropicNaiR) {
+    steps.push({
+      key: "anthropic_norfolk_ai",
+      ok: anthropicNaiR.ok,
+      message: anthropicNaiR.message,
+      imported: anthropicNaiR.imported,
+    });
+  } else {
+    steps.push({
+      key: "anthropic_norfolk_ai",
+      ok: false,
+      message: "ANTHROPIC_NORFOLK_AI_ADMIN_KEY not set — skipped.",
+      imported: 0,
+    });
+  }
+
+  steps.push(
     {
       key: "chatgpt",
       ok: chatgptR.ok,
@@ -115,9 +159,9 @@ export async function POST(request: Request) {
       message: perplexityR.message,
       imported: perplexityR.imported,
     },
-  ];
+  );
 
-  const apiOk = openaiR.ok || anthropicR.ok;
+  const apiOk = openaiR.ok || anthropicR.ok || (anthropicNaiR?.ok ?? false);
   const anyOk = steps.some((s) => s.ok);
   const summary = [
     removedSampleRows > 0
@@ -125,6 +169,9 @@ export async function POST(request: Request) {
       : null,
     `OpenAI: ${openaiR.ok ? `ok (${openaiR.imported} row(s))` : openaiR.message}`,
     `Anthropic: ${anthropicR.ok ? `ok (${anthropicR.imported} row(s))` : anthropicR.message}`,
+    anthropicNaiR
+      ? `Anthropic (norfolk.ai): ${anthropicNaiR.ok ? `ok (${anthropicNaiR.imported} row(s))` : anthropicNaiR.message}`
+      : "Anthropic (norfolk.ai): key not set — skipped.",
     `ChatGPT: ${chatgptR.ok ? `ok (${chatgptR.imported} row(s))` : chatgptR.message}`,
     `Perplexity: ${perplexityR.ok ? `ok (${perplexityR.imported} row(s))` : perplexityR.message}`,
   ]

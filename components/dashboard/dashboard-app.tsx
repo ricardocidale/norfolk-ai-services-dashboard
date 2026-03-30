@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import type { AiProvider, BillingAccount } from "@prisma/client";
 import { RefreshCw } from "lucide-react";
@@ -33,23 +32,10 @@ import type { VendorSpendAnalytics } from "@/lib/analytics/vendor-spend";
 import { providerMeta } from "@/lib/providers-meta";
 import { cn } from "@/lib/utils";
 import { ExpenseChart } from "./expense-chart";
-import { ExpenseList } from "./expense-list";
 import { VendorSyncFetchingBanner } from "./vendor-sync-fetching-banner";
 import { VendorSpendTables } from "./vendor-spend-tables";
 
-export type DashboardExpenseRow = {
-  id: string;
-  provider: AiProvider;
-  billingAccount: BillingAccount;
-  amount: string;
-  currency: string;
-  incurredAt: string;
-  label: string | null;
-  source: string;
-};
-
 export type DashboardSnapshot = {
-  expenses: DashboardExpenseRow[];
   byProvider: { provider: AiProvider; sum: string; count: number }[];
   byAccount: { billingAccount: BillingAccount; sum: string; count: number }[];
   totalAmount: string;
@@ -78,27 +64,18 @@ export function DashboardApp({
     setShowChartsLocal(getShowCharts());
   }, []);
 
-  const refresh = async (opts?: { silent?: boolean }) => {
-    const [expRes, sumRes, vsRes] = await Promise.all([
-      fetch("/api/expenses?take=120"),
+  const refresh = async (opts?: { silent?: boolean }): Promise<void> => {
+    const [sumRes, vsRes] = await Promise.all([
       fetch("/api/summary"),
       fetch("/api/analytics/vendor-spend"),
     ]);
-    const expJson = await expRes.json();
     const sumJson = await sumRes.json();
     const vsJson = await vsRes.json();
-    if (!expRes.ok || !sumRes.ok || !vsRes.ok) {
+    if (!sumRes.ok || !vsRes.ok) {
       if (!opts?.silent) setToast("Could not refresh data.");
       return;
     }
     setSnapshot({
-      expenses: (expJson.expenses as DashboardExpenseRow[]).map((e) => ({
-        ...e,
-        incurredAt:
-          typeof e.incurredAt === "string"
-            ? e.incurredAt
-            : new Date(e.incurredAt as unknown as Date).toISOString(),
-      })),
       byProvider: sumJson.byProvider,
       byAccount: sumJson.byAccount,
       totalAmount: sumJson.totalAmount,
@@ -344,20 +321,6 @@ export function DashboardApp({
         </section>
       ) : null}
 
-      <section className="space-y-4">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <h2 className="text-lg font-medium">Recent expenses</h2>
-          <div className="flex flex-wrap items-center gap-2">
-            <Button asChild variant="ghost" size="sm" className="text-muted-foreground">
-              <Link href="/expenses/add">Add manually</Link>
-            </Button>
-            <Button type="button" variant="outline" size="sm" onClick={() => refresh()}>
-              Refresh
-            </Button>
-          </div>
-        </div>
-        <ExpenseList rows={snapshot.expenses} onChanged={refresh} />
-      </section>
     </div>
   );
 }

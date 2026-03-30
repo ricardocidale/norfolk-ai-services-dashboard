@@ -6,13 +6,6 @@ import type { AdminUserRow } from "@/lib/admin/clerk-user-dto";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import {
   Table,
   TableBody,
   TableCell,
@@ -69,36 +62,18 @@ export function AdminUsersClient({ rows, totalCount, offset, limit }: Props) {
   const next = offset + limit < totalCount ? offset + limit : null;
 
   return (
-    <div className="space-y-6">
-      <Card>
-        <CardHeader>
-          <CardTitle>Clerk users</CardTitle>
-          <CardDescription>
-            Manage sign-in access via Clerk&apos;s Backend API (ban, lock,
-            remove avatar). Password resets are not sent from this UI: users
-            should use <strong>Forgot password</strong> on the sign-in page, or
-            you can reset credentials in the{" "}
-            <a
-              href="https://dashboard.clerk.com"
-              target="_blank"
-              rel="noreferrer"
-              className="font-medium text-primary underline-offset-4 hover:underline"
-            >
-              Clerk Dashboard
-            </a>
-            .
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {message ? (
-            <p className="text-sm text-muted-foreground">{message}</p>
-          ) : null}
-          <div className="flex flex-wrap gap-2">
+    <div className="space-y-4">
+      {message ? (
+        <p className="rounded-lg border border-primary/30 bg-primary/5 px-3 py-2 text-sm text-foreground">
+          {message}
+        </p>
+      ) : null}
+      <div className="flex flex-wrap gap-2">
             <Button
               variant="outline"
               size="sm"
               disabled={offset === 0}
-              onClick={() => router.push(`/admin/users?offset=${prev}`)}
+              onClick={() => router.push(`/admin?tab=users&offset=${prev}`)}
             >
               Previous
             </Button>
@@ -107,7 +82,7 @@ export function AdminUsersClient({ rows, totalCount, offset, limit }: Props) {
               size="sm"
               disabled={next === null}
               onClick={() =>
-                next != null && router.push(`/admin/users?offset=${next}`)
+                next != null && router.push(`/admin?tab=users&offset=${next}`)
               }
             >
               Next
@@ -251,9 +226,7 @@ export function AdminUsersClient({ rows, totalCount, offset, limit }: Props) {
                 ))}
               </TableBody>
             </Table>
-          </div>
-        </CardContent>
-      </Card>
+      </div>
     </div>
   );
 }

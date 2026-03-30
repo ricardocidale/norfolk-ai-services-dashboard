@@ -10,40 +10,25 @@ export const dynamic = "force-dynamic";
 
 async function loadSnapshot(): Promise<DashboardSnapshot | null> {
   try {
-    const [expenses, byProvider, byAccount, agg, vendorSpend] =
-      await Promise.all([
-        prisma.expense.findMany({
-          orderBy: { incurredAt: "desc" },
-          take: 120,
-        }),
-        prisma.expense.groupBy({
-          by: ["provider"],
-          _sum: { amount: true },
-          _count: true,
-        }),
-        prisma.expense.groupBy({
-          by: ["billingAccount"],
-          _sum: { amount: true },
-          _count: true,
-        }),
-        prisma.expense.aggregate({
-          _sum: { amount: true },
-          _count: true,
-        }),
-        getVendorSpendAnalytics(),
-      ]);
+    const [byProvider, byAccount, agg, vendorSpend] = await Promise.all([
+      prisma.expense.groupBy({
+        by: ["provider"],
+        _sum: { amount: true },
+        _count: true,
+      }),
+      prisma.expense.groupBy({
+        by: ["billingAccount"],
+        _sum: { amount: true },
+        _count: true,
+      }),
+      prisma.expense.aggregate({
+        _sum: { amount: true },
+        _count: true,
+      }),
+      getVendorSpendAnalytics(),
+    ]);
 
     return {
-      expenses: expenses.map((e) => ({
-        id: e.id,
-        provider: e.provider,
-        billingAccount: e.billingAccount,
-        amount: e.amount.toString(),
-        currency: e.currency,
-        incurredAt: e.incurredAt.toISOString(),
-        label: e.label,
-        source: e.source,
-      })),
       byProvider: byProvider
         .map((r) => ({
           provider: r.provider,

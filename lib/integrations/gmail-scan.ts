@@ -1,10 +1,10 @@
-import { google, type gmail_v1 } from "googleapis";
+import { gmail, type gmail_v1 } from "@googleapis/gmail";
 import type { OAuth2Client } from "google-auth-library";
 import { prisma } from "@/lib/db";
 import { getAuthenticatedClient } from "@/lib/integrations/gmail-client";
 import { parseInvoiceWithAI } from "@/lib/integrations/invoice-parser";
 
-const VENDOR_DOMAINS = [
+const VENDOR_DOMAINS: readonly string[] = [
   "anthropic.com",
   "openai.com",
   "cursor.sh",
@@ -24,7 +24,7 @@ const VENDOR_DOMAINS = [
   "stripe.com",
 ];
 
-const SUBJECT_KEYWORDS = [
+const SUBJECT_KEYWORDS: readonly string[] = [
   "invoice",
   "receipt",
   "payment",
@@ -68,12 +68,12 @@ export type ScannedEmail = {
 };
 
 async function fetchMessages(
-  gmail: gmail_v1.Gmail,
-  email: string,
+  gmailClient: gmail_v1.Gmail,
+  _email: string,
   maxResults = 50,
 ): Promise<ScannedEmail[]> {
   const query = buildSearchQuery();
-  const listRes = await gmail.users.messages.list({
+  const listRes = await gmailClient.users.messages.list({
     userId: "me",
     q: query,
     maxResults,
@@ -87,10 +87,11 @@ async function fetchMessages(
 
     const existing = await prisma.emailScanResult.findUnique({
       where: { gmailMessageId: msg.id },
+      select: { id: true },
     });
     if (existing) continue;
 
-    const detail = await gmail.users.messages.get({
+    const detail = await gmailClient.users.messages.get({
       userId: "me",
       id: msg.id,
       format: "full",
@@ -156,11 +157,11 @@ export async function scanGmailForInvoices(
     };
   }
 
-  const gmail = google.gmail({ version: "v1", auth: authClient });
+  const gmailClient = gmail({ version: "v1", auth: authClient });
 
   let messages: ScannedEmail[];
   try {
-    messages = await fetchMessages(gmail, email);
+    messages = await fetchMessages(gmailClient, email);
   } catch (e) {
     return {
       email,
@@ -204,10 +205,14 @@ export async function scanGmailForInvoices(
     }
   }
 
-  await prisma.gmailConnection.update({
-    where: { email },
-    data: { lastSyncAt: new Date() },
-  });
+  try {
+    await prisma.gmailConnection.update({
+      where: { email },
+      data: { lastSyncAt: new Date() },
+    });
+  } catch {
+    errors.push("Failed to update lastSyncAt timestamp");
+  }
 
   return { email, scanned: messages.length, newResults, errors };
 }

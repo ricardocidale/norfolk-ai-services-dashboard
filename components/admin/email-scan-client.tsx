@@ -63,6 +63,25 @@ function formatDate(iso: string | null): string {
   });
 }
 
+function formatMoney(
+  amount: string | null,
+  currency: string | null,
+): string {
+  if (!amount) return "—";
+  const num = Number(amount);
+  if (!Number.isFinite(num)) return "—";
+  try {
+    return new Intl.NumberFormat("en-US", {
+      style: "currency",
+      currency: currency ?? "USD",
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    }).format(num);
+  } catch {
+    return `${currency ?? "USD"} ${num.toFixed(2)}`;
+  }
+}
+
 function confidenceBadge(c: number | null) {
   if (c == null) return <Badge variant="outline">N/A</Badge>;
   if (c >= 0.8)
@@ -97,41 +116,54 @@ export function EmailScanClient({
   const [actionBusy, setActionBusy] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
 
-  const connectGmail = async (email: string) => {
+  const connectGmail = async (email: string): Promise<void> => {
     setToast(null);
     try {
       const res = await fetch(
         `/api/gmail/auth?email=${encodeURIComponent(email)}`,
       );
-      const data = await res.json();
-      if (data.url) {
-        window.open(data.url, "_blank", "width=600,height=700");
+      const json = (await res.json()) as {
+        success: boolean;
+        error: string | null;
+        data: { url: string } | null;
+      };
+      if (json.success && json.data?.url) {
+        window.open(json.data.url, "_blank", "width=600,height=700");
         setToast(
           `Google consent window opened for ${email}. Complete sign-in, then return here.`,
         );
       } else {
-        setToast(data.error ?? "Failed to get auth URL.");
+        setToast(json.error ?? "Failed to get auth URL.");
       }
     } catch (e) {
       setToast(e instanceof Error ? e.message : String(e));
     }
   };
 
-  const scanNow = async () => {
+  const scanNow = async (): Promise<void> => {
     setScanning(true);
     setToast(null);
     try {
       const res = await fetch("/api/gmail/scan", { method: "POST" });
-      const data = await res.json();
-      setToast(data.message ?? "Scan complete.");
+      const json = (await res.json()) as {
+        success: boolean;
+        error: string | null;
+        data: { message: string } | null;
+      };
+      setToast(json.data?.message ?? json.error ?? "Scan complete.");
 
       const resultRes = await fetch("/api/gmail/results?status=PENDING");
-      const resultData = await resultRes.json();
-      if (resultData.results) {
+      const resultJson = (await resultRes.json()) as {
+        success: boolean;
+        data: { results: ScanResult[] } | null;
+      };
+      if (resultJson.data?.results) {
         setResults((prev) => {
-          const ids = new Set(resultData.results.map((r: ScanResult) => r.id));
+          const ids = new Set(
+            resultJson.data!.results.map((r: ScanResult) => r.id),
+          );
           const kept = prev.filter((r) => !ids.has(r.id));
-          return [...resultData.results, ...kept];
+          return [...resultJson.data!.results, ...kept];
         });
       }
     } catch (e) {
@@ -141,7 +173,10 @@ export function EmailScanClient({
     }
   };
 
-  const handleAction = async (id: string, action: "approve" | "reject") => {
+  const handleAction = async (
+    id: string,
+    action: "approve" | "reject",
+  ): Promise<void> => {
     setActionBusy(id);
     try {
       const res = await fetch("/api/gmail/results", {
@@ -149,21 +184,25 @@ export function EmailScanClient({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ id, action }),
       });
-      const data = await res.json();
-      if (data.ok) {
+      const json = (await res.json()) as {
+        success: boolean;
+        error: string | null;
+        data: { status: string; expenseId?: string } | null;
+      };
+      if (json.success) {
         setResults((prev) =>
           prev.map((r) =>
             r.id === id
               ? {
                   ...r,
                   status: action === "approve" ? "IMPORTED" : "REJECTED",
-                  expenseId: data.expenseId ?? r.expenseId,
+                  expenseId: json.data?.expenseId ?? r.expenseId,
                 }
               : r,
           ),
         );
       } else {
-        setToast(data.error ?? "Action failed.");
+        setToast(json.error ?? "Action failed.");
       }
     } catch (e) {
       setToast(e instanceof Error ? e.message : String(e));
@@ -281,9 +320,7 @@ export function EmailScanClient({
                         {r.parsedVendor ?? "—"}
                       </TableCell>
                       <TableCell className="whitespace-nowrap tabular-nums">
-                        {r.parsedAmount
-                          ? `${r.parsedCurrency ?? "USD"} ${Number(r.parsedAmount).toFixed(2)}`
-                          : "—"}
+                        {formatMoney(r.parsedAmount, r.parsedCurrency)}
                       </TableCell>
                       <TableCell
                         className="max-w-[200px] truncate text-xs text-muted-foreground"
@@ -365,9 +402,7 @@ export function EmailScanClient({
                         {r.parsedVendor ?? "—"}
                       </TableCell>
                       <TableCell className="whitespace-nowrap tabular-nums">
-                        {r.parsedAmount
-                          ? `${r.parsedCurrency ?? "USD"} ${Number(r.parsedAmount).toFixed(2)}`
-                          : "—"}
+                        {formatMoney(r.parsedAmount, r.parsedCurrency)}
                       </TableCell>
                       <TableCell
                         className="max-w-[200px] truncate text-xs text-muted-foreground"

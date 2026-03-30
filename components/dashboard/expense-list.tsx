@@ -1,6 +1,6 @@
 "use client";
 
-import type { AiProvider } from "@prisma/client";
+import type { AiProvider, BillingAccount } from "@prisma/client";
 import { BILLING_ACCOUNT_LABEL } from "@/lib/billing-accounts";
 import { providerMeta } from "@/lib/providers-meta";
 import { Button } from "@/components/ui/button";
@@ -12,13 +12,23 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import type { DashboardExpenseRow } from "./dashboard-app";
+
+export type ExpenseRow = {
+  id: string;
+  provider: AiProvider;
+  billingAccount: BillingAccount;
+  amount: string;
+  currency: string;
+  incurredAt: string;
+  label: string | null;
+  source: string;
+};
 
 export function ExpenseList({
   rows,
   onChanged,
 }: {
-  rows: DashboardExpenseRow[];
+  rows: ExpenseRow[];
   onChanged: () => Promise<void>;
 }) {
   async function remove(id: string) {

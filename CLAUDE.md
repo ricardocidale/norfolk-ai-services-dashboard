@@ -204,6 +204,7 @@ NEXT_PUBLIC_CLERK_SIGN_UP_FALLBACK_REDIRECT_URL=/
 # AI APIs
 OPENAI_API_KEY
 ANTHROPIC_API_KEY
+ANTHROPIC_NORFOLK_AI_ADMIN_KEY  # second org (ricardo.cidale@norfolk.ai)
 
 # See .env.example for ChatGPT monthly vars, Perplexity, Google creds, admin keys
 ```

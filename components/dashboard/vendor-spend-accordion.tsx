@@ -34,6 +34,7 @@ type ExpenseLine = {
   currency: string;
   incurredAt: string;
   label: string | null;
+  notes: string | null;
   source: string;
 };
 
@@ -48,6 +49,79 @@ function formatUsd(s: string): string {
 
 function providerLabel(p: AiProvider): string {
   return providerMeta(p)?.label ?? p.replaceAll("_", " ");
+}
+
+type ParsedUsageNotes = {
+  totalTokens: number;
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  cacheCreationTokens: number;
+  modelsUsed: string[];
+  costByModel: Record<string, string>;
+};
+
+function parseUsageNotes(notes: string | null): ParsedUsageNotes | null {
+  if (!notes) return null;
+  try {
+    const obj = JSON.parse(notes) as Record<string, unknown>;
+    if (obj.source !== "anthropic_messages_usage_report") return null;
+    const num = (k: string) => {
+      const v = obj[k];
+      return typeof v === "number" && Number.isFinite(v) ? v : 0;
+    };
+    return {
+      totalTokens: num("total_tokens"),
+      inputTokens: num("input_tokens"),
+      outputTokens: num("output_tokens"),
+      cacheReadTokens: num("cache_read_input_tokens"),
+      cacheCreationTokens: num("cache_creation_input_tokens"),
+      modelsUsed: Array.isArray(obj.models_used)
+        ? (obj.models_used as string[])
+        : [],
+      costByModel:
+        obj.cost_by_model && typeof obj.cost_by_model === "object"
+          ? (obj.cost_by_model as Record<string, string>)
+          : {},
+    };
+  } catch {
+    return null;
+  }
+}
+
+function formatTokenCount(n: number): string {
+  if (n === 0) return "0";
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`;
+  return String(n);
+}
+
+function UsageDetail({ notes }: { notes: string | null }) {
+  const usage = parseUsageNotes(notes);
+  if (!usage || usage.totalTokens === 0) return null;
+
+  const parts: string[] = [];
+  if (usage.inputTokens > 0)
+    parts.push(`${formatTokenCount(usage.inputTokens)} in`);
+  if (usage.outputTokens > 0)
+    parts.push(`${formatTokenCount(usage.outputTokens)} out`);
+  if (usage.cacheReadTokens > 0)
+    parts.push(`${formatTokenCount(usage.cacheReadTokens)} cache-read`);
+
+  const modelCosts = Object.entries(usage.costByModel);
+
+  return (
+    <span className="flex flex-col gap-0.5">
+      <span>{formatTokenCount(usage.totalTokens)} tokens ({parts.join(", ")})</span>
+      {usage.modelsUsed.length > 0 && (
+        <span className="text-muted-foreground">
+          {modelCosts.length > 0
+            ? modelCosts.map(([m, c]) => `${m}: ${c}`).join(", ")
+            : usage.modelsUsed.join(", ")}
+        </span>
+      )}
+    </span>
+  );
 }
 
 function cacheKey(
@@ -202,6 +276,7 @@ function VendorSpendAccordionInner({
                             <TableHead className="text-xs">Date</TableHead>
                             <TableHead className="text-xs">Billing</TableHead>
                             <TableHead className="text-xs">Amount</TableHead>
+                            <TableHead className="text-xs">Usage</TableHead>
                             <TableHead className="text-xs">
                               Label / source
                             </TableHead>
@@ -221,6 +296,9 @@ function VendorSpendAccordionInner({
                               </TableCell>
                               <TableCell className="text-xs tabular-nums font-medium">
                                 {formatUsd(e.amount)} {e.currency}
+                              </TableCell>
+                              <TableCell className="max-w-[280px] text-xs text-muted-foreground">
+                                <UsageDetail notes={e.notes} />
                               </TableCell>
                               <TableCell className="max-w-[220px] truncate text-xs text-muted-foreground">
                                 {e.label ?? "—"}{" "}

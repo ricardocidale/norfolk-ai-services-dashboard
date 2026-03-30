@@ -6,13 +6,10 @@ import { usePathname } from "next/navigation";
 import { Fragment, useState } from "react";
 import {
   LayoutDashboard,
-  Mail,
   Menu,
   Plus,
   Settings2,
-  Unplug,
   UserCircle,
-  Users,
   X,
 } from "lucide-react";
 import {
@@ -70,14 +67,8 @@ function NavIcon({ item }: { item: NavItem }) {
       return <Plus className={c} />;
     case "admin":
       return <Settings2 className={c} />;
-    case "sources":
-      return <Unplug className={c} />;
     case "profile":
       return <UserCircle className={c} />;
-    case "users":
-      return <Users className={c} />;
-    case "email-scan":
-      return <Mail className={c} />;
     default:
       return null;
   }

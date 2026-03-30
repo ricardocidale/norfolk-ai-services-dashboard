@@ -13,6 +13,10 @@ import type { SyncResult } from "./types";
  * Requires an Admin API key (sk-ant-admin…) from Console → Admin keys.
  * Standard API keys cannot call these endpoints.
  *
+ * Supports syncing multiple Anthropic organizations by passing different
+ * `apiKey` values and `orgLabel` strings (used in externalRef to avoid
+ * collisions between orgs).
+ *
  * @see https://docs.anthropic.com/en/api/usage-cost-api
  */
 
@@ -29,10 +33,22 @@ type UsageAgg = {
   server_tool_use: number;
 };
 
+type ModelCostEntry = {
+  model: string;
+  costType: string;
+  tokenType: string | null;
+  amountCents: number;
+};
+
 function adminKey(): string | undefined {
   const a = process.env.ANTHROPIC_ADMIN_API_KEY?.trim();
   const b = process.env.ANTHROPIC_API_KEY?.trim();
   return a || b || undefined;
+}
+
+/** Admin key for the NORFOLK_AI organization (ricardo.cidale@norfolk.ai). */
+export function norfolkAiAdminKey(): string | undefined {
+  return process.env.ANTHROPIC_NORFOLK_AI_ADMIN_KEY?.trim() || undefined;
 }
 
 function headers(apiKey: string): Record<string, string> {
@@ -84,11 +100,61 @@ function totalTokens(a: UsageAgg): number {
   );
 }
 
-function usageNotes(agg: UsageAgg): string {
-  return JSON.stringify({
+function usageNotes(
+  agg: UsageAgg,
+  modelBreakdown?: ModelCostEntry[],
+): string {
+  const obj: Record<string, unknown> = {
     source: "anthropic_messages_usage_report",
     ...agg,
-  });
+    total_tokens: totalTokens(agg),
+  };
+  if (modelBreakdown && modelBreakdown.length > 0) {
+    const byModel: Record<string, number> = {};
+    for (const e of modelBreakdown) {
+      byModel[e.model] = (byModel[e.model] ?? 0) + e.amountCents;
+    }
+    obj.models_used = Object.keys(byModel);
+    obj.cost_by_model = Object.fromEntries(
+      Object.entries(byModel).map(([m, cents]) => [
+        m,
+        `$${(cents / 100).toFixed(4)}`,
+      ]),
+    );
+  }
+  return JSON.stringify(obj);
+}
+
+function extractModelCostEntries(
+  results: Record<string, unknown>[],
+): ModelCostEntry[] {
+  const entries: ModelCostEntry[] = [];
+  for (const r of results) {
+    const model =
+      typeof r.model === "string" ? r.model : "unknown";
+    const costType =
+      typeof r.cost_type === "string" ? r.cost_type : "tokens";
+    const tokenType =
+      typeof r.token_type === "string" ? r.token_type : null;
+    const amountCents = readCentsFromResult(r);
+    if (amountCents !== 0) {
+      entries.push({ model, costType, tokenType, amountCents });
+    }
+  }
+  return entries;
+}
+
+function readCentsFromResult(r: Record<string, unknown>): number {
+  const readCents = (v: unknown): number | null => {
+    if (typeof v === "string") {
+      const n = Number(v);
+      return Number.isFinite(n) ? n : null;
+    }
+    if (typeof v === "number" && Number.isFinite(v)) return v;
+    return null;
+  };
+
+  return readCents(r.amount) ?? readCents(r.cost) ?? readCents(r.total_cost) ?? 0;
 }
 
 /** Cost lines are USD in cents (string or number) per Anthropic docs. */
@@ -177,6 +243,7 @@ async function fetchCostPage(
   url.searchParams.set("ending_at", endingAt);
   url.searchParams.set("bucket_width", "1d");
   url.searchParams.set("limit", String(MAX_1D_BUCKETS));
+  url.searchParams.append("group_by[]", "description");
   if (page) url.searchParams.set("page", page);
 
   const res = await fetch(url.toString(), {
@@ -352,8 +419,12 @@ export async function syncAnthropicUsage(options: {
   billingAccount: BillingAccount;
   startTime?: Date;
   endTime?: Date;
+  /** Pass an explicit admin key to sync a specific org (multi-org support). */
+  apiKey?: string;
+  /** Short label appended to externalRef to avoid collisions between orgs (e.g. "nai"). */
+  orgLabel?: string;
 }): Promise<SyncResult> {
-  const apiKey = adminKey();
+  const apiKey = options.apiKey ?? adminKey();
   if (!apiKey) {
     return {
       ok: false,
@@ -394,6 +465,7 @@ export async function syncAnthropicUsage(options: {
     };
   }
 
+  const orgSuffix = options.orgLabel ? `-${options.orgLabel}` : "";
   let imported = 0;
   const costDaysSeen = new Set<string>();
   const batch = new SyncWriteBatch(prisma);
@@ -413,14 +485,28 @@ export async function syncAnthropicUsage(options: {
       dayUsd = dayUsd.plus(dollarsFromCostResult(r));
     }
 
+    const modelEntries = extractModelCostEntries(list);
+    const modelsUsed = [...new Set(modelEntries.map((e) => e.model))].filter(
+      (m) => m !== "unknown",
+    );
+
     const usage = usageMap.get(dayKey) ?? emptyAgg();
-    const notes = totalTokens(usage) > 0 ? usageNotes(usage) : null;
+    const notes =
+      totalTokens(usage) > 0 || modelEntries.length > 0
+        ? usageNotes(usage, modelEntries)
+        : null;
 
     if (dayUsd.isZero() && totalTokens(usage) === 0) continue;
 
     costDaysSeen.add(dayKey);
-    const externalRef = `anthropic-cost-${dayKey}`;
+    const externalRef = `anthropic-cost-${dayKey}${orgSuffix}`;
     const amountStr = dayUsd.gt(0) ? dayUsd.toFixed(4) : "0";
+
+    const modelLabel =
+      modelsUsed.length > 0 ? ` [${modelsUsed.join(", ")}]` : "";
+    const costLabel = dayUsd.gt(0)
+      ? `Anthropic API${modelLabel} — $${dayUsd.toFixed(2)} cost + usage`
+      : `Anthropic API${modelLabel} — usage only (no cost)`;
 
     await batch.addAndFlush(
       prisma.expense.upsert({
@@ -435,10 +521,7 @@ export async function syncAnthropicUsage(options: {
           incurredAt: times.start,
           periodStart: times.start,
           periodEnd: times.end,
-          label:
-            dayUsd.gt(0)
-              ? "Anthropic API cost + message usage (Admin API sync)"
-              : "Anthropic message usage — no cost bucket (Admin API sync)",
+          label: costLabel,
           source: "anthropic_admin_api",
           externalRef,
           notes,
@@ -450,19 +533,17 @@ export async function syncAnthropicUsage(options: {
           periodEnd: times.end,
           billingAccount: options.billingAccount,
           notes,
-          label:
-            dayUsd.gt(0)
-              ? "Anthropic API cost + message usage (Admin API sync)"
-              : "Anthropic message usage — no cost bucket (Admin API sync)",
+          label: costLabel,
         },
       }),
     );
 
+    const legacyRef = `anthropic-usage-${dayKey}${orgSuffix}`;
     await batch.addAndFlush(
       prisma.expense.deleteMany({
         where: {
           provider: "ANTHROPIC",
-          externalRef: `anthropic-usage-${dayKey}`,
+          externalRef: legacyRef,
         },
       }),
     );
@@ -477,7 +558,7 @@ export async function syncAnthropicUsage(options: {
 
     const dayDate = new Date(`${dayKey}T00:00:00.000Z`);
     const nextDay = new Date(dayDate.getTime() + DAY_MS);
-    const externalRef = `anthropic-usage-${dayKey}`;
+    const externalRef = `anthropic-usage-${dayKey}${orgSuffix}`;
 
     await batch.addAndFlush(
       prisma.expense.upsert({
@@ -492,7 +573,7 @@ export async function syncAnthropicUsage(options: {
           incurredAt: dayDate,
           periodStart: dayDate,
           periodEnd: nextDay,
-          label: "Anthropic message usage only (Admin API sync)",
+          label: "Anthropic message usage only",
           source: "anthropic_admin_api",
           externalRef,
           notes: usageNotes(usage),
@@ -510,11 +591,12 @@ export async function syncAnthropicUsage(options: {
 
   await batch.flush();
 
+  const orgNote = options.orgLabel ? ` (org: ${options.orgLabel})` : "";
   await prisma.syncRun.create({
     data: {
       provider: "ANTHROPIC",
       ok: true,
-      message: `Imported ${imported} row(s) (cost_report + usage_report/messages).`,
+      message: `Imported ${imported} row(s) (cost_report + usage_report/messages)${orgNote}.`,
       imported,
       finishedAt: new Date(),
     },
@@ -524,8 +606,8 @@ export async function syncAnthropicUsage(options: {
     ok: true,
     message:
       imported > 0
-        ? `Upserted ${imported} row(s) from Anthropic (cost and token usage).`
-        : "No cost or usage in range (check Admin API key and organization).",
+        ? `Upserted ${imported} row(s) from Anthropic${orgNote} (cost and token usage).`
+        : `No cost or usage in range${orgNote} (check Admin API key and organization).`,
     imported,
     provider: "ANTHROPIC",
   };
