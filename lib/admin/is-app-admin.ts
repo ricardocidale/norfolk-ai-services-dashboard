@@ -27,6 +27,8 @@ function matchesDefaultAdminEmail(user: {
 
 /**
  * Who may use /admin/* and /api/admin/* (except nothing — all gated).
+ * Uses `currentUser()` (session + Clerk user record); API routes should call this
+ * after `auth()` has already ensured a signed-in user via middleware on `/api/*`.
  * - `publicMetadata.role === "admin"` (set in Clerk Dashboard → User → Public metadata)
  * - or primary/verified email `ricardo.cidale@norfolkgroup.io` (default owner)
  */

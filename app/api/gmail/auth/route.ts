@@ -1,5 +1,6 @@
 import { auth } from "@clerk/nextjs/server";
-import { NextResponse, type NextRequest } from "next/server";
+import { type NextRequest } from "next/server";
+import { jsonErr, jsonOk } from "@/lib/http/api-response";
 import { isAppAdmin } from "@/lib/admin/is-app-admin";
 import {
   getGmailAuthUrl,
@@ -16,19 +17,13 @@ export const dynamic = "force-dynamic";
  * GET /api/gmail/auth?email=xxx
  * Returns the Google OAuth consent URL for connecting a Gmail account.
  */
-export async function GET(request: NextRequest): Promise<NextResponse> {
+export async function GET(request: NextRequest): Promise<Response> {
   const { userId } = await auth();
   if (!userId) {
-    return NextResponse.json(
-      { success: false, error: "Unauthorized", data: null },
-      { status: 401 },
-    );
+    return jsonErr("Unauthorized", 401, { code: "UNAUTHORIZED" });
   }
   if (!(await isAppAdmin())) {
-    return NextResponse.json(
-      { success: false, error: "Forbidden", data: null },
-      { status: 403 },
-    );
+    return jsonErr("Forbidden", 403, { code: "FORBIDDEN" });
   }
 
   const { searchParams } = new URL(request.url);
@@ -36,28 +31,20 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     email: searchParams.get("email") ?? undefined,
   });
   if (!parsed.success) {
-    return NextResponse.json(
-      {
-        success: false,
-        error: parsed.error.issues.map((i) => i.message).join("; "),
-        data: null,
-      },
-      { status: 400 },
+    return jsonErr(
+      parsed.error.issues.map((i) => i.message).join("; "),
+      400,
+      { code: "VALIDATION" },
     );
   }
 
   try {
     const url = getGmailAuthUrl(parsed.data.email);
-    return NextResponse.json({ success: true, error: null, data: { url } });
+    return jsonOk({ url });
   } catch (e) {
-    return NextResponse.json(
-      {
-        success: false,
-        error: e instanceof Error ? e.message : String(e),
-        data: null,
-      },
-      { status: 500 },
-    );
+    return jsonErr(e instanceof Error ? e.message : String(e), 500, {
+      code: "OAUTH_URL_FAILED",
+    });
   }
 }
 
@@ -66,40 +53,28 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
  * Body: { code, email }
  * Exchanges the OAuth authorization code for tokens and saves them.
  */
-export async function POST(request: NextRequest): Promise<NextResponse> {
+export async function POST(request: NextRequest): Promise<Response> {
   const { userId } = await auth();
   if (!userId) {
-    return NextResponse.json(
-      { success: false, error: "Unauthorized", data: null },
-      { status: 401 },
-    );
+    return jsonErr("Unauthorized", 401, { code: "UNAUTHORIZED" });
   }
   if (!(await isAppAdmin())) {
-    return NextResponse.json(
-      { success: false, error: "Forbidden", data: null },
-      { status: 403 },
-    );
+    return jsonErr("Forbidden", 403, { code: "FORBIDDEN" });
   }
 
   let rawBody: unknown;
   try {
     rawBody = await request.json();
   } catch {
-    return NextResponse.json(
-      { success: false, error: "Invalid JSON", data: null },
-      { status: 400 },
-    );
+    return jsonErr("Invalid JSON", 400, { code: "INVALID_JSON" });
   }
 
   const parsed = gmailAuthPostSchema.safeParse(rawBody);
   if (!parsed.success) {
-    return NextResponse.json(
-      {
-        success: false,
-        error: parsed.error.issues.map((i) => i.message).join("; "),
-        data: null,
-      },
-      { status: 400 },
+    return jsonErr(
+      parsed.error.issues.map((i) => i.message).join("; "),
+      400,
+      { code: "VALIDATION" },
     );
   }
 
@@ -108,22 +83,13 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       parsed.data.code,
       parsed.data.email,
     );
-    return NextResponse.json({
-      success: true,
-      error: null,
-      data: {
-        email: parsed.data.email,
-        tokenExpiry: result.expiry.toISOString(),
-      },
+    return jsonOk({
+      email: parsed.data.email,
+      tokenExpiry: result.expiry.toISOString(),
     });
   } catch (e) {
-    return NextResponse.json(
-      {
-        success: false,
-        error: e instanceof Error ? e.message : String(e),
-        data: null,
-      },
-      { status: 500 },
-    );
+    return jsonErr(e instanceof Error ? e.message : String(e), 500, {
+      code: "TOKEN_EXCHANGE_FAILED",
+    });
   }
 }

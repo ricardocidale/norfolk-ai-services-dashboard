@@ -6,6 +6,11 @@ import {
   defaultSyncRangeEnd,
   defaultSyncRangeStart,
 } from "@/lib/integrations/sync-range";
+import { openaiApiKeyFromEnv } from "@/lib/integrations/openai-env";
+import {
+  openaiOrganizationCostsUrl,
+  openaiOrganizationUsageUrl,
+} from "@/lib/integrations/openai-constants";
 import type { SyncResult } from "./types";
 
 /**
@@ -72,7 +77,7 @@ function orgHeaders(apiKey: string): Record<string, string> {
     Authorization: `Bearer ${apiKey}`,
     "Content-Type": "application/json",
   };
-  const org = process.env.OPENAI_ORG_ID;
+  const org = process.env.OPENAI_ORG_ID?.trim();
   if (org) headers["OpenAI-Organization"] = org;
   return headers;
 }
@@ -193,7 +198,7 @@ async function fetchCostBucketsChunk(
   let page: string | null | undefined;
 
   do {
-    const url = new URL("https://api.openai.com/v1/organization/costs");
+    const url = new URL(openaiOrganizationCostsUrl());
     url.searchParams.set("start_time", String(startSec));
     url.searchParams.set("end_time", String(endSec));
     url.searchParams.set("bucket_width", "1d");
@@ -259,9 +264,7 @@ async function fetchOrganizationUsageIntoMap<T>(
     let page: string | null | undefined;
 
     do {
-      const url = new URL(
-        `https://api.openai.com/v1/organization/usage/${endpoint}`,
-      );
+      const url = new URL(openaiOrganizationUsageUrl(endpoint));
       url.searchParams.set("start_time", String(c0));
       url.searchParams.set("end_time", String(c1));
       url.searchParams.set("bucket_width", "1d");
@@ -319,7 +322,7 @@ export async function syncOpenAIUsage(options: {
   startTime?: Date;
   endTime?: Date;
 }): Promise<SyncResult> {
-  const apiKey = process.env.OPENAI_ADMIN_KEY ?? process.env.OPENAI_API_KEY;
+  const apiKey = openaiApiKeyFromEnv();
   if (!apiKey) {
     return {
       ok: false,

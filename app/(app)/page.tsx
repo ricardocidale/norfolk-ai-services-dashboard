@@ -4,7 +4,7 @@ import { SetupNotice } from "@/components/setup-notice";
 import { isAppAdmin } from "@/lib/admin/is-app-admin";
 import { getVendorSpendAnalytics } from "@/lib/analytics/vendor-spend";
 import { prisma } from "@/lib/db";
-import { compareProviderSpendDesc } from "@/lib/sort-vendors";
+import { compareProviderSpendDesc } from "@/lib/vendors/sort-vendors";
 
 export const dynamic = "force-dynamic";
 

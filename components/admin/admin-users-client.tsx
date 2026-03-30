@@ -13,6 +13,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { apiErrorMessageFromBody } from "@/lib/http/api-response";
 
 type Props = {
   rows: AdminUserRow[];
@@ -30,8 +31,10 @@ async function postAction(
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
-  const data = (await res.json()) as { ok?: boolean; error?: string };
-  if (!res.ok) return { error: data.error ?? res.statusText };
+  const data = await res.json();
+  if (!res.ok) {
+    return { error: apiErrorMessageFromBody(data) ?? res.statusText };
+  }
   return { ok: true };
 }
 

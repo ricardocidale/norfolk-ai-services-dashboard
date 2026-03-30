@@ -1,8 +1,8 @@
 "use client";
 
 import type { AiProvider, BillingAccount } from "@prisma/client";
-import { BILLING_ACCOUNT_LABEL } from "@/lib/billing-accounts";
-import { providerMeta } from "@/lib/providers-meta";
+import { BILLING_ACCOUNT_LABEL } from "@/lib/expenses/billing-accounts";
+import { providerMeta } from "@/lib/vendors/providers-meta";
 import { Button } from "@/components/ui/button";
 import {
   Table,

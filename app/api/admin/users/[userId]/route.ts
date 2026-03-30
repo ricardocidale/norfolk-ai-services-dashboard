@@ -1,5 +1,5 @@
 import { clerkClient } from "@clerk/nextjs/server";
-import { NextResponse } from "next/server";
+import { jsonErr, jsonOk } from "@/lib/http/api-response";
 import { z } from "zod";
 import { isAppAdmin } from "@/lib/admin/is-app-admin";
 
@@ -17,24 +17,24 @@ type Params = { params: Promise<{ userId: string }> };
 
 export async function POST(request: Request, ctx: Params) {
   if (!(await isAppAdmin())) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    return jsonErr("Forbidden", 403, { code: "FORBIDDEN" });
   }
 
   const { userId: targetId } = await ctx.params;
   if (!targetId?.startsWith("user_")) {
-    return NextResponse.json({ error: "Invalid user id" }, { status: 400 });
+    return jsonErr("Invalid user id", 400, { code: "INVALID_USER_ID" });
   }
 
   let body: unknown;
   try {
     body = await request.json();
   } catch {
-    return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
+    return jsonErr("Invalid JSON", 400, { code: "INVALID_JSON" });
   }
 
   const parsed = actionSchema.safeParse(body);
   if (!parsed.success) {
-    return NextResponse.json({ error: "Invalid action payload" }, { status: 400 });
+    return jsonErr("Invalid action payload", 400, { code: "VALIDATION" });
   }
 
   const { action } = parsed.data;
@@ -43,13 +43,14 @@ export async function POST(request: Request, ctx: Params) {
 
   if (action === "delete") {
     if (parsed.data.confirmUserId !== targetId) {
-      return NextResponse.json(
-        { error: "confirmUserId must match the user being deleted" },
-        { status: 400 },
+      return jsonErr(
+        "confirmUserId must match the user being deleted",
+        400,
+        { code: "CONFIRM_MISMATCH" },
       );
     }
     await clerk.users.deleteUser(targetId);
-    return NextResponse.json({ ok: true, message: "User deleted" });
+    return jsonOk({ message: "User deleted" });
   }
 
   try {
@@ -70,12 +71,12 @@ export async function POST(request: Request, ctx: Params) {
         await clerk.users.deleteUserProfileImage(targetId);
         break;
       default:
-        return NextResponse.json({ error: "Unknown action" }, { status: 400 });
+        return jsonErr("Unknown action", 400, { code: "UNKNOWN_ACTION" });
     }
   } catch (e) {
     const message = e instanceof Error ? e.message : "Clerk request failed";
-    return NextResponse.json({ error: message }, { status: 502 });
+    return jsonErr(message, 502, { code: "CLERK_ERROR" });
   }
 
-  return NextResponse.json({ ok: true });
+  return jsonOk({});
 }

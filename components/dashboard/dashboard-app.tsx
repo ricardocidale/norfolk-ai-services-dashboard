@@ -3,11 +3,11 @@
 import { useEffect, useMemo, useState } from "react";
 import type { AiProvider, BillingAccount } from "@prisma/client";
 import { RefreshCw } from "lucide-react";
-import { getShowCharts } from "@/lib/dashboard-prefs";
+import { getShowCharts } from "@/lib/dashboard/prefs";
 import {
   BILLING_ACCOUNT_LABEL,
   BILLING_ACCOUNT_ORDER,
-} from "@/lib/billing-accounts";
+} from "@/lib/expenses/billing-accounts";
 import { DEFAULT_SYNC_LOOKBACK_MONTHS } from "@/lib/integrations/sync-range";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -28,12 +28,19 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import type { VendorSpendAnalytics } from "@/lib/analytics/vendor-spend";
-import { providerMeta } from "@/lib/providers-meta";
+import { providerMeta } from "@/lib/vendors/providers-meta";
 import { cn } from "@/lib/utils";
 import { ExpenseChart } from "./expense-chart";
 import { VendorSyncFetchingBanner } from "./vendor-sync-fetching-banner";
+import { DashboardVendorExplorer } from "./dashboard-vendor-explorer";
+import { VendorCategoryRankings } from "./vendor-category-rankings";
 import { VendorSpendTables } from "./vendor-spend-tables";
+import {
+  apiErrorMessageFromBody,
+  unwrapApiSuccessData,
+} from "@/lib/http/api-response";
 
 export type DashboardSnapshot = {
   byProvider: { provider: AiProvider; sum: string; count: number }[];
@@ -75,12 +82,23 @@ export function DashboardApp({
       if (!opts?.silent) setToast("Could not refresh data.");
       return;
     }
+    const sum = unwrapApiSuccessData<{
+      byProvider: DashboardSnapshot["byProvider"];
+      byAccount: DashboardSnapshot["byAccount"];
+      totalAmount: string;
+      expenseCount: number;
+    }>(sumJson);
+    const vendorSpend = unwrapApiSuccessData<VendorSpendAnalytics>(vsJson);
+    if (!sum || !vendorSpend) {
+      if (!opts?.silent) setToast("Could not refresh data.");
+      return;
+    }
     setSnapshot({
-      byProvider: sumJson.byProvider,
-      byAccount: sumJson.byAccount,
-      totalAmount: sumJson.totalAmount,
-      expenseCount: sumJson.expenseCount,
-      vendorSpend: vsJson as VendorSpendAnalytics,
+      byProvider: sum.byProvider,
+      byAccount: sum.byAccount,
+      totalAmount: sum.totalAmount,
+      expenseCount: sum.expenseCount,
+      vendorSpend,
     });
     if (!opts?.silent) {
       setToast("Updated.");
@@ -120,16 +138,13 @@ export function DashboardApp({
           removeSampleRows,
         }),
       });
-      const j = (await res.json()) as {
-        ok?: boolean;
-        message?: string;
-        summary?: string;
-      };
+      const j = await res.json();
       if (!res.ok) {
-        setToast(j.message ?? "Vendor sync failed.");
+        setToast(apiErrorMessageFromBody(j) ?? "Vendor sync failed.");
         return;
       }
-      setToast(j.summary ?? "Vendor sync finished.");
+      const d = unwrapApiSuccessData<{ summary: string }>(j);
+      setToast(d?.summary ?? "Vendor sync finished.");
       await refresh({ silent: true });
       setTimeout(() => setToast(null), 14000);
     } finally {
@@ -299,27 +314,35 @@ export function DashboardApp({
         )}
         aria-busy={vendorSyncBusy}
       >
-        <h2 className="text-lg font-medium">Vendor tables</h2>
-        <VendorSpendTables data={snapshot.vendorSpend} />
+        <Tabs defaultValue="overview" className="w-full">
+          <TabsList className="mb-4 flex h-auto w-full flex-wrap gap-1">
+            <TabsTrigger value="overview" className="text-xs sm:text-sm">
+              Overview
+            </TabsTrigger>
+            <TabsTrigger value="explorer" className="text-xs sm:text-sm">
+              Vendor lines & timeline
+            </TabsTrigger>
+          </TabsList>
+          <TabsContent value="overview" className="mt-0 space-y-4">
+            <VendorCategoryRankings data={snapshot.vendorSpend} />
+            <h2 className="text-lg font-medium">Vendor tables</h2>
+            <VendorSpendTables data={snapshot.vendorSpend} />
+            {showCharts ? (
+              <div className="space-y-4">
+                <h2 className="text-lg font-medium">Spend by provider</h2>
+                <Card>
+                  <CardContent className="pt-6">
+                    <ExpenseChart data={chartData} />
+                  </CardContent>
+                </Card>
+              </div>
+            ) : null}
+          </TabsContent>
+          <TabsContent value="explorer" className="mt-0">
+            <DashboardVendorExplorer data={snapshot.vendorSpend} />
+          </TabsContent>
+        </Tabs>
       </section>
-
-      {showCharts ? (
-        <section
-          className={cn(
-            "space-y-4",
-            vendorSyncBusy &&
-              "motion-reduce:opacity-100 motion-reduce:blur-none opacity-[0.88] blur-[0.5px] transition-[opacity,filter] duration-300",
-          )}
-          aria-busy={vendorSyncBusy}
-        >
-          <h2 className="text-lg font-medium">Spend by provider</h2>
-          <Card>
-            <CardContent className="pt-6">
-              <ExpenseChart data={chartData} />
-            </CardContent>
-          </Card>
-        </section>
-      ) : null}
 
     </div>
   );

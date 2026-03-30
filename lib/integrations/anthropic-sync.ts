@@ -7,6 +7,10 @@ import {
   defaultSyncRangeStart,
 } from "@/lib/integrations/sync-range";
 import type { SyncResult } from "./types";
+import {
+  ANTHROPIC_API_VERSION,
+  ANTHROPIC_OUTBOUND_USER_AGENT,
+} from "@/lib/integrations/anthropic-constants";
 
 /**
  * Anthropic organization Usage & Cost Admin API (Claude API spend).
@@ -21,7 +25,6 @@ import type { SyncResult } from "./types";
  */
 
 const BASE = "https://api.anthropic.com";
-const ANTHROPIC_VERSION = "2023-06-01";
 const DAY_MS = 24 * 60 * 60 * 1000;
 const MAX_1D_BUCKETS = 31;
 
@@ -54,9 +57,9 @@ export function norfolkAiAdminKey(): string | undefined {
 function headers(apiKey: string): Record<string, string> {
   return {
     "x-api-key": apiKey,
-    "anthropic-version": ANTHROPIC_VERSION,
+    "anthropic-version": ANTHROPIC_API_VERSION,
     "content-type": "application/json",
-    "user-agent": "NorfolkAISpendDashboard/1.0",
+    "user-agent": ANTHROPIC_OUTBOUND_USER_AGENT,
   };
 }
 

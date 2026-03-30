@@ -1,6 +1,6 @@
-import { NextResponse } from "next/server";
+import { jsonOk } from "@/lib/http/api-response";
 import { prisma } from "@/lib/db";
-import { compareProviderSpendDesc } from "@/lib/sort-vendors";
+import { compareProviderSpendDesc } from "@/lib/vendors/sort-vendors";
 
 export const dynamic = "force-dynamic";
 
@@ -26,7 +26,7 @@ export async function GET() {
     }),
   ]);
 
-  return NextResponse.json({
+  return jsonOk({
     totalAmount: totals._sum.amount?.toString() ?? "0",
     expenseCount: totals._count,
     byProvider: byProvider

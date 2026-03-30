@@ -12,7 +12,7 @@ Spend is attributed to three **billing accounts**, which map to the primary logi
 | `NORFOLK_AI` | ricardo.cidale@norfolk.ai |
 | `CIDALE` | ricardo@cidale.com |
 
-Labels in the UI come from `lib/billing-accounts.ts`.
+Labels in the UI come from `lib/expenses/billing-accounts.ts`.
 
 ### Documentation and review (start here)
 
@@ -37,7 +37,7 @@ Labels in the UI come from `lib/billing-accounts.ts`.
 | Charts | **Recharts** | Dashboard visualizations |
 | Validation | **Zod** | API payloads; schemas in `lib/validations/` |
 | ORM / DB | **Prisma 6** + **PostgreSQL 16** | Schema in `prisma/schema.prisma`; migrations in `prisma/migrations/` |
-| AI SDKs (server) | **`openai`** (REST), **`@anthropic-ai/sdk`** | Wrapped in `lib/sdk-clients.ts`; sync logic in `lib/integrations/` |
+| AI SDKs (server) | **`openai`** (REST), **`@anthropic-ai/sdk`** | Wrapped in `lib/integrations/sdk-clients.ts`; sync logic in `lib/integrations/` |
 | Local DB | **Docker Compose** | `docker-compose.yml` — Postgres for dev |
 | Prod DB | **Neon** or **Supabase** (Postgres) | Pooled `DATABASE_URL` for serverless |
 
@@ -90,11 +90,11 @@ lib/
   admin/                # Admin helpers (e.g. expense source env status)
   db.ts                 # Prisma client singleton
   analytics/            # Server-side spend rollups (used by API + SSR)
-  sdk-clients.ts        # OpenAI / Anthropic client factories (env-based)
-  integrations/         # Per-vendor sync + types (API shapes live here)
+  dashboard/            # Client prefs for dashboard UI (e.g. chart visibility)
+  expenses/             # Expense domain: dedup guards, billing labels, vendor→account defaults
+  vendors/              # Provider catalog metadata + sort helpers for UI/API
+  integrations/         # External APIs: sdk-clients, OAuth, per-vendor sync, Gmail scan
   validations/          # Zod schemas shared by API routes
-  billing-accounts.ts   # Domain mapping (emails → BillingAccount)
-  providers-meta.ts     # UI / catalog metadata
 prisma/
   schema.prisma         # Source of truth for DB + enums
   migrations/           # Applied in order; never hand-edit applied migrations
@@ -104,29 +104,32 @@ public/                 # Static assets
 
 **Contracts:** HTTP request/response shapes are implied by Zod in `lib/validations/expense.ts` and route handlers. DB shape is **`prisma/schema.prisma`**. If you change one, update the other and add a migration.
 
+**JSON envelope (app API routes):** Success responses are `{ "ok": true, "data": … }`. Errors are `{ "ok": false, "error": { "message": string, "code"?: string, "details"?: unknown } }` with an appropriate HTTP status. Helpers live in `lib/http/api-response.ts`.
+
 ---
 
 ## HTTP API (summary)
 
-All JSON APIs use `Content-Type: application/json` unless noted. Amounts in JSON are strings in responses (Decimal serialization).
+All JSON APIs use `Content-Type: application/json` unless noted. Amounts in JSON are strings in responses (Decimal serialization). Successful bodies use the `{ ok, data }` envelope described above unless a route explicitly documents otherwise.
 
 | Method | Path | Description |
 | --- | --- | --- |
-| `GET` | `/api/expenses` | Query: `take` (max 500), optional `provider` (`AiProvider` enum), optional `from` / `to` (ISO datetimes, `incurredAt` filter; max range ~400 days). Returns `{ expenses }` (newest first). |
-| `POST` | `/api/expenses` | Body: expense create object (see schema below). Returns `{ expense }`. `409` on constraint violation. |
-| `PATCH` | `/api/expenses/[id]` | Partial update; same fields as create. `404` if missing. |
-| `DELETE` | `/api/expenses/[id]` | Deletes row. `404` if missing. |
-| `POST` | `/api/import` | Body: `{ "expenses": [ … ] }` — each item matches create schema. Returns `{ created, errors }`. |
-| `GET` | `/api/summary` | Totals and groupings + recent `SyncRun` rows. |
-| `GET` | `/api/analytics/vendor-spend` | Vendor breakdown: current UTC month (MTD), per-vendor amounts for each of **M-1 … M-12**, and **cumulative** totals over those twelve months. The dashboard uses tabs: current month (name + year), three prior months, the full **Prior 12 months** grid, then **Cumulative 12 months** (see `components/dashboard/vendor-spend-tables.tsx`). |
-| `POST` | `/api/admin/probe/openai` | **App admins only.** Checks `OPENAI_*` keys against the OpenAI models endpoint (no spend import). |
-| `POST` | `/api/admin/probe/anthropic` | **App admins only.** Checks `ANTHROPIC_API_KEY` against the Messages API (validation error = key accepted). |
+| `GET` | `/api/expenses` | Query: `take` (max 500), optional `provider` (`AiProvider` enum), optional `from` / `to` (ISO datetimes, `incurredAt` filter; max range ~400 days). `data`: `{ expenses }` (newest first). |
+| `POST` | `/api/expenses` | Body: expense create object (see schema below). `data`: `{ expense }`. `409` on unique `(provider, externalRef)` violation **or** when a row would duplicate an existing **API-synced** expense (same provider, date ±1d, amount within 5%, same currency) — see `lib/expenses/dedup.ts`. |
+| `PATCH` | `/api/expenses/[id]` | Partial update; same fields as create. `data`: `{ expense }`. `404` if missing. |
+| `DELETE` | `/api/expenses/[id]` | `data`: `{ deleted: true }`. `404` if missing. |
+| `POST` | `/api/import` | Body: `{ "expenses": [ … ] }` — each item matches create schema. `data`: `{ created, errors }`. Skipped rows (API overlap) append human-readable messages to `errors`. |
+| `GET` | `/api/summary` | Totals and groupings + recent `SyncRun` rows (in `data`). |
+| `GET` | `/api/analytics/vendor-spend` | Vendor breakdown in `data`: current UTC month (MTD), per-vendor amounts for each of **M-1 … M-12**, and **cumulative** totals over those twelve months. The dashboard uses tabs: current month (name + year), three prior months, the full **Prior 12 months** grid, then **Cumulative 12 months** (see `components/dashboard/vendor-spend-tables.tsx`). |
+| `POST` | `/api/admin/probe/openai` | **App admins only.** Checks `OPENAI_*` keys against the OpenAI models endpoint (no spend import). `data`: `{ message }`. |
+| `POST` | `/api/admin/probe/anthropic` | **App admins only.** Tries Admin **cost_report** first; if unavailable, probes Messages API and explains whether Usage & Cost sync can run. |
 | `POST` | `/api/admin/probe/perplexity` | **App admins only.** Checks `PERPLEXITY_API_KEY` against the Perplexity API (no spend import). |
-| `POST` | `/api/sync/[provider]` | `provider`: `openai` \| `anthropic` \| `chatgpt` \| `perplexity`. Query: `billingAccount` (`BillingAccount` enum, default `NORFOLK_GROUP`). For **openai** / **anthropic**, optional body `{ start?, end? }` (ISO datetimes); if omitted, defaults to **now** and **12 UTC months** before that (`lib/integrations/sync-range.ts`). `chatgpt` / `perplexity` may use `{ month? }`. Returns sync result; `422` when sync reports failure. |
-| `POST` | `/api/profile/avatar/generate` | Signed-in user only. Body: `{ "prompt": string }` (4–500 chars). Uses `GOOGLE_GENAI_API_KEY` / `GEMINI_API_KEY` and Imagen; returns `{ imageBase64, mimeType }` for the client to apply via Clerk `setProfileImage`. |
-| `POST` | `/api/admin/users/[userId]` | **App admins only** (`publicMetadata.role === "admin"` or default owner email in code). Body: `{ "action": "ban" \| "unban" \| "lock" \| "unlock" \| "removeAvatar" }` or `{ "action": "delete", "confirmUserId": "<same as path>" }`. Wraps Clerk Backend SDK. |
+| `POST` | `/api/sync/[provider]` | `provider`: `openai` \| `anthropic` \| `chatgpt` \| `perplexity`. Query: `billingAccount` (`BillingAccount` enum, default `NORFOLK_GROUP`). For **openai** / **anthropic**, optional body `{ start?, end? }` (ISO datetimes); if omitted, defaults to **now** and **12 UTC months** before that (`lib/integrations/sync-range.ts`). `chatgpt` / `perplexity` may use `{ month? }`. On success `data`: `{ message, imported }`; `422` + error envelope when sync reports failure. |
+| `POST` | `/api/profile/avatar/generate` | Signed-in user only. Body: `{ "prompt": string }` (4–500 chars). Uses `GOOGLE_GENAI_API_KEY` / `GEMINI_API_KEY` and Imagen; `data`: `{ imageBase64, mimeType }` for the client to apply via Clerk `setProfileImage`. |
+| `POST` | `/api/admin/users/[userId]` | **App admins only** (`publicMetadata.role === "admin"` or default owner email in code). Body: `{ "action": "ban" \| "unban" \| "lock" \| "unlock" \| "removeAvatar" }` or `{ "action": "delete", "confirmUserId": "<same as path>" }`. Wraps Clerk Backend SDK. Success: `data` (e.g. `{}` or `{ message }` on delete). |
+| `GET` | `/api/admin/dedup-audit` | **App admins only.** Deterministic scan for same-day, same-provider, near-duplicate amounts; `data` includes `groups`, counts, and `keep_api`-style hints. |
 
-**Create body fields** (see `expenseCreateSchema` in `lib/validations/expense.ts`): `provider`, `billingAccount`, `amount`, optional `currency`, `incurredAt`, `periodStart`, `periodEnd`, `label`, `notes`, `source`, `externalRef`. Enums must match Prisma `AiProvider` and `BillingAccount`.
+**Create body fields** (see `expenseCreateSchema` in `lib/validations/expense.ts`): `provider`, `billingAccount`, `amount`, optional `currency` (normalized to uppercase), `incurredAt`, `periodStart`, `periodEnd`, `label`, `notes`, `source`, `externalRef`. Enums must match Prisma `AiProvider` and `BillingAccount`.
 
 ---
 
@@ -136,7 +139,7 @@ All JSON APIs use `Content-Type: application/json` unless noted. Amounts in JSON
 - **Secrets:** Only via environment variables. See `.env.example`. Never commit `.env` or service account JSON.
 - **Clerk app admins:** The whole `/admin` UI and `/api/admin/*` routes require `publicMetadata.role === "admin"` (set in Clerk) or the default owner email `ricardo.cidale@norfolkgroup.io` (see `lib/admin/is-app-admin.ts`). End-user password reset is via Clerk’s sign-in **Forgot password** flow or the [Clerk Dashboard](https://dashboard.clerk.com).
 - **Avatar AI:** `GOOGLE_GENAI_API_KEY` (or `GEMINI_API_KEY`) powers optional Imagen generation on `/profile`.
-- **OpenAI sync:** Uses `OPENAI_ADMIN_KEY` or `OPENAI_API_KEY` and optional `OPENAI_ORG_ID` — org **costs** (paginated `next_page`) plus **completions**, **embeddings**, and **images** usage (each paginated); merged into `Expense.notes` as JSON. If embeddings/images fail (e.g. scope), sync still succeeds and warnings are appended to the result message.
+- **OpenAI sync:** Uses `OPENAI_ADMIN_KEY` or `OPENAI_API_KEY` (trimmed; same resolution as admin probe and `getOpenAIClient` in `lib/integrations/openai-env.ts`) and optional trimmed `OPENAI_ORG_ID` — org **costs** (paginated `next_page`) plus **completions**, **embeddings**, and **images** usage (each paginated); merged into `Expense.notes` as JSON. If embeddings/images fail (e.g. scope), sync still succeeds and warnings are appended to the result message.
 - **Anthropic sync:** Requires **`ANTHROPIC_ADMIN_API_KEY`** (Console → Admin keys, `sk-ant-admin…`) for [Usage & Cost API](https://docs.anthropic.com/en/api/usage-cost-api). A normal `ANTHROPIC_API_KEY` cannot call `cost_report` / `usage_report`. Consumer **claude.ai** billing is not available via this API — use manual rows for that.
 - **Long syncs:** `POST /api/sync/openai` and `…/anthropic` set `maxDuration = 120` (seconds) so 12‑month backfills are less likely to hit the platform default timeout; your Vercel plan’s **maximum** still caps this.
 - **DB writes:** OpenAI / Anthropic sync buffer upserts + `deleteMany` into batched `prisma.$transaction` calls (`lib/integrations/sync-prisma-batch.ts`, `SYNC_DB_OPS_PER_TX = 32`) to cut round-trips to Postgres.
@@ -162,7 +165,7 @@ Open [http://localhost:3000](http://localhost:3000). Production build: `npm run 
 - **Single source of truth:** `prisma/schema.prisma` for data model; Zod for API input; Route Handlers orchestrate only.
 - **Small PRs:** Touch one concern (schema vs UI vs one integration) when possible.
 - **Migrations:** After schema changes run `npx prisma migrate dev`, commit the new migration folder; document breaking API changes in the PR.
-- **Integrations:** Vendor-specific parsing and external API types live under `lib/integrations/`. Centralize new SDK usage in `lib/sdk-clients.ts`.
+- **Integrations:** Vendor-specific parsing and external API types live under `lib/integrations/`. Centralize new SDK usage in `lib/integrations/sdk-clients.ts`. Expense-specific rules (dedup, billing defaults) live under `lib/expenses/`.
 - **UI:** Prefer existing `components/ui/*` patterns; add shadcn components with `npx shadcn@latest add <name>` from project root on **local disk**.
 
 Project-specific agent guidance lives in **`CLAUDE.md`** (Cursor / Claude Code).

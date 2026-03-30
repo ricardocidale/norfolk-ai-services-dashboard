@@ -1,7 +1,9 @@
-import { NextResponse } from "next/server";
+import { jsonErr, jsonOk } from "@/lib/http/api-response";
 import { Prisma } from "@prisma/client";
+import type { AiProvider } from "@prisma/client";
 import { z } from "zod";
 import { prisma } from "@/lib/db";
+import { findOverlappingApiExpense } from "@/lib/expenses/dedup";
 import { expenseCreateSchema } from "@/lib/validations/expense";
 
 export const dynamic = "force-dynamic";
@@ -15,14 +17,15 @@ export async function POST(request: Request) {
   try {
     body = await request.json();
   } catch {
-    return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
+    return jsonErr("Invalid JSON", 400, { code: "INVALID_JSON" });
   }
 
   const parsed = batchSchema.safeParse(body);
   if (!parsed.success) {
-    return NextResponse.json(
-      { error: parsed.error.flatten() },
-      { status: 400 },
+    return jsonErr(
+      parsed.error.issues.map((i) => i.message).join("; "),
+      400,
+      { code: "VALIDATION", details: parsed.error.flatten() },
     );
   }
 
@@ -34,6 +37,20 @@ export async function POST(request: Request) {
       typeof row.incurredAt === "string"
         ? new Date(row.incurredAt)
         : row.incurredAt;
+
+    const overlap = await findOverlappingApiExpense({
+      provider: row.provider as AiProvider,
+      date: incurredAt,
+      amount: row.amount,
+      currency: row.currency,
+    });
+    if (overlap) {
+      errors.push(
+        `Duplicate blocked for ${row.provider} on ${incurredAt.toISOString().slice(0, 10)}: API-synced expense already exists ($${overlap.amount}, source: ${overlap.source})`,
+      );
+      continue;
+    }
+
     try {
       await prisma.expense.create({
         data: {
@@ -56,5 +73,5 @@ export async function POST(request: Request) {
     }
   }
 
-  return NextResponse.json({ created, errors });
+  return jsonOk({ created, errors });
 }

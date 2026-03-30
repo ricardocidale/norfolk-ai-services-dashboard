@@ -1,6 +1,9 @@
 import { auth } from "@clerk/nextjs/server";
-import { NextResponse } from "next/server";
 import { isAppAdmin } from "@/lib/admin/is-app-admin";
+import { ANTHROPIC_API_VERSION } from "@/lib/integrations/anthropic-constants";
+import { openaiApiKeyFromEnv } from "@/lib/integrations/openai-env";
+import { openaiModelsProbeUrl } from "@/lib/integrations/openai-constants";
+import { jsonErr, jsonOk } from "@/lib/http/api-response";
 
 export const dynamic = "force-dynamic";
 
@@ -10,27 +13,27 @@ type Params = { params: Promise<{ provider: string }> };
  * Lightweight connectivity check (does not import spend).
  * App admins only (same gate as /admin/*).
  */
-export async function POST(_request: Request, ctx: Params) {
+export async function POST(_request: Request, ctx: Params): Promise<Response> {
   const { userId } = await auth();
   if (!userId) {
-    return NextResponse.json({ ok: false, message: "Unauthorized" }, { status: 401 });
+    return jsonErr("Unauthorized", 401, { code: "UNAUTHORIZED" });
   }
   if (!(await isAppAdmin())) {
-    return NextResponse.json({ ok: false, message: "Forbidden" }, { status: 403 });
+    return jsonErr("Forbidden", 403, { code: "FORBIDDEN" });
   }
 
   const { provider } = await ctx.params;
 
   if (provider === "openai") {
-    const apiKey =
-      process.env.OPENAI_ADMIN_KEY ?? process.env.OPENAI_API_KEY ?? "";
-    if (!apiKey.trim()) {
-      return NextResponse.json({
-        ok: false,
-        message: "No OPENAI_API_KEY or OPENAI_ADMIN_KEY in environment.",
-      });
+    const apiKey = openaiApiKeyFromEnv() ?? "";
+    if (!apiKey) {
+      return jsonErr(
+        "No OPENAI_API_KEY or OPENAI_ADMIN_KEY in environment.",
+        400,
+        { code: "MISSING_KEY" },
+      );
     }
-    const res = await fetch("https://api.openai.com/v1/models?limit=1", {
+    const res = await fetch(openaiModelsProbeUrl(), {
       headers: {
         Authorization: `Bearer ${apiKey}`,
         "Content-Type": "application/json",
@@ -39,13 +42,13 @@ export async function POST(_request: Request, ctx: Params) {
     });
     if (!res.ok) {
       const t = await res.text();
-      return NextResponse.json({
-        ok: false,
-        message: `OpenAI returned ${res.status}: ${t.slice(0, 280)}`,
-      });
+      return jsonErr(
+        `OpenAI returned ${res.status}: ${t.slice(0, 280)}`,
+        502,
+        { code: "UPSTREAM_ERROR" },
+      );
     }
-    return NextResponse.json({
-      ok: true,
+    return jsonOk({
       message: "API key accepted (models endpoint reachable).",
     });
   }
@@ -55,11 +58,11 @@ export async function POST(_request: Request, ctx: Params) {
       (process.env.ANTHROPIC_ADMIN_API_KEY ?? "").trim() ||
       (process.env.ANTHROPIC_API_KEY ?? "").trim();
     if (!key) {
-      return NextResponse.json({
-        ok: false,
-        message:
-          "Set ANTHROPIC_ADMIN_API_KEY (or an Admin key in ANTHROPIC_API_KEY).",
-      });
+      return jsonErr(
+        "Set ANTHROPIC_ADMIN_API_KEY (or an Admin key in ANTHROPIC_API_KEY).",
+        400,
+        { code: "MISSING_KEY" },
+      );
     }
 
     const end = new Date();
@@ -75,7 +78,7 @@ export async function POST(_request: Request, ctx: Params) {
       {
         headers: {
           "x-api-key": key,
-          "anthropic-version": "2023-06-01",
+          "anthropic-version": ANTHROPIC_API_VERSION,
           "user-agent": "NorfolkAISpendDashboard/1.0-probe",
         },
         cache: "no-store",
@@ -83,8 +86,7 @@ export async function POST(_request: Request, ctx: Params) {
     );
     const adminText = await adminRes.text();
     if (adminRes.ok) {
-      return NextResponse.json({
-        ok: true,
+      return jsonOk({
         message:
           "Admin API key accepted (cost_report reachable). Sync will pull cost + message usage.",
       });
@@ -94,7 +96,7 @@ export async function POST(_request: Request, ctx: Params) {
         method: "POST",
         headers: {
           "x-api-key": key,
-          "anthropic-version": "2023-06-01",
+          "anthropic-version": ANTHROPIC_API_VERSION,
           "content-type": "application/json",
         },
         body: "{}",
@@ -102,37 +104,38 @@ export async function POST(_request: Request, ctx: Params) {
       });
       const t = await res.text();
       if (res.status === 401) {
-        return NextResponse.json({
-          ok: false,
-          message: "Anthropic rejected the API key (401).",
+        return jsonErr("Anthropic rejected the API key (401).", 502, {
+          code: "UPSTREAM_UNAUTHORIZED",
         });
       }
       if (res.status === 400) {
-        return NextResponse.json({
-          ok: false,
-          message:
-            "Standard API key works for Messages, but Usage & Cost sync needs an Admin key (sk-ant-admin…) from Console → Admin keys.",
-        });
+        return jsonErr(
+          "Standard API key works for Messages, but Usage & Cost sync needs an Admin key (sk-ant-admin…) from Console → Admin keys.",
+          502,
+          { code: "WRONG_KEY_TYPE" },
+        );
       }
-      return NextResponse.json({
-        ok: false,
-        message: `Anthropic returned ${res.status}: ${t.slice(0, 280)}`,
-      });
+      return jsonErr(
+        `Anthropic returned ${res.status}: ${t.slice(0, 280)}`,
+        502,
+        { code: "UPSTREAM_ERROR" },
+      );
     }
-    return NextResponse.json({
-      ok: false,
-      message: `Anthropic cost_report ${adminRes.status}: ${adminText.slice(0, 280)}`,
-    });
+    return jsonErr(
+      `Anthropic cost_report ${adminRes.status}: ${adminText.slice(0, 280)}`,
+      502,
+      { code: "UPSTREAM_ERROR" },
+    );
   }
 
   if (provider === "perplexity") {
     const key = (process.env.PERPLEXITY_API_KEY ?? "").trim();
     if (!key) {
-      return NextResponse.json({
-        ok: false,
-        message:
-          "PERPLEXITY_API_KEY is not set in this app’s environment (GitHub Secrets do not apply here unless your workflow injects them into Vercel/host env).",
-      });
+      return jsonErr(
+        "PERPLEXITY_API_KEY is not set in this app’s environment (GitHub Secrets do not apply here unless your workflow injects them into Vercel/host env).",
+        400,
+        { code: "MISSING_KEY" },
+      );
     }
     const res = await fetch("https://api.perplexity.ai/v1/async/sonar", {
       headers: {
@@ -143,26 +146,22 @@ export async function POST(_request: Request, ctx: Params) {
     });
     const t = await res.text();
     if (res.ok) {
-      return NextResponse.json({
-        ok: true,
+      return jsonOk({
         message:
           "API key accepted (async sonar list reachable). Billing totals still come from PERPLEXITY_MONTHLY_USD or manual entry — no org-wide spend API documented.",
       });
     }
     if (res.status === 401) {
-      return NextResponse.json({
-        ok: false,
-        message: "Perplexity rejected the API key (401).",
+      return jsonErr("Perplexity rejected the API key (401).", 502, {
+        code: "UPSTREAM_UNAUTHORIZED",
       });
     }
-    return NextResponse.json({
-      ok: false,
-      message: `Perplexity returned ${res.status}: ${t.slice(0, 280)}`,
-    });
+    return jsonErr(
+      `Perplexity returned ${res.status}: ${t.slice(0, 280)}`,
+      502,
+      { code: "UPSTREAM_ERROR" },
+    );
   }
 
-  return NextResponse.json(
-    { ok: false, message: `No probe for "${provider}".` },
-    { status: 400 },
-  );
+  return jsonErr(`No probe for "${provider}".`, 400, { code: "UNKNOWN_PROVIDER" });
 }

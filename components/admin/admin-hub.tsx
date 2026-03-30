@@ -2,19 +2,21 @@
 
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense } from "react";
+import Link from "next/link";
 import {
   Unplug,
   Mail,
   Users,
   Settings2,
   Info,
+  BarChart3,
 } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import {
   BILLING_ACCOUNT_LABEL,
   BILLING_ACCOUNT_ORDER,
-} from "@/lib/billing-accounts";
+} from "@/lib/expenses/billing-accounts";
 import { ExpenseSourcesClient } from "./expense-sources-client";
 import { EmailScanClient } from "./email-scan-client";
 import { AdminUsersClient } from "./admin-users-client";
@@ -42,6 +44,7 @@ type ScanResult = {
   parsedCurrency: string | null;
   parsedDate: string | null;
   confidence: number | null;
+  parsedUsage: unknown;
   status: string;
   expenseId: string | null;
   rawSnippet: string | null;
@@ -91,6 +94,19 @@ function AdminHubInner(props: AdminHubProps): React.JSX.Element {
           never stored or displayed here.
         </p>
 
+        <div className="mt-4">
+          <Link
+            href="/admin/analysis"
+            className="inline-flex items-center gap-2 rounded-lg border border-primary/25 bg-primary/5 px-3 py-2 text-sm font-medium text-primary transition-[background-color,box-shadow] hover:bg-primary/10"
+          >
+            <BarChart3 className="size-4 shrink-0" />
+            Analysis & reports
+            <span className="text-xs font-normal text-muted-foreground">
+              — consumption, mix, trends
+            </span>
+          </Link>
+        </div>
+
         <div className="mt-4 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
           <span className="flex items-center gap-1.5">
             <Info className="size-3 opacity-60" />
@@ -132,9 +148,11 @@ function AdminHubInner(props: AdminHubProps): React.JSX.Element {
 
         <TabsContent value="vendors" className="mt-6 space-y-2">
           <p className="text-sm text-muted-foreground">
-            Each vendor is linked to a billing email and a data source. Use{" "}
-            <strong>Test API</strong> to verify credentials, or{" "}
-            <strong>Sync now</strong> to pull usage data.
+            <strong className="text-foreground">Data sources & certainty:</strong>{" "}
+            See how each vendor’s totals enter the app (API vs env monthly vs manual),
+            what that implies for completeness, and how overlaps with Gmail approval
+            are handled. Use <strong>Test API</strong> or <strong>Sync now</strong>{" "}
+            where available.
           </p>
           <ExpenseSourcesClient initialStatuses={props.expenseSources} />
         </TabsContent>

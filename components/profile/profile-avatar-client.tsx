@@ -19,6 +19,10 @@ import {
   TabsList,
   TabsTrigger,
 } from "@/components/ui/tabs";
+import {
+  apiErrorMessageFromBody,
+  unwrapApiSuccessData,
+} from "@/lib/http/api-response";
 
 const PRESET_COLORS = [
   "#1E2D45",
@@ -112,16 +116,16 @@ export function ProfileAvatarClient() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ prompt }),
       });
-      const data = (await res.json()) as {
-        error?: string;
-        imageBase64?: string;
-        mimeType?: string;
-      };
+      const raw = await res.json();
       if (!res.ok) {
-        setError(data.error ?? "Generation failed");
+        setError(apiErrorMessageFromBody(raw) ?? "Generation failed");
         return;
       }
-      if (!data.imageBase64) {
+      const data = unwrapApiSuccessData<{
+        imageBase64: string;
+        mimeType?: string;
+      }>(raw);
+      if (!data?.imageBase64) {
         setError("No image in response");
         return;
       }

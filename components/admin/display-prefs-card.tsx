@@ -9,7 +9,7 @@ import {
 } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import { getShowCharts, setShowCharts } from "@/lib/dashboard-prefs";
+import { getShowCharts, setShowCharts } from "@/lib/dashboard/prefs";
 
 export function DisplayPrefsCard() {
   const [charts, setCharts] = useState(false);

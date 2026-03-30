@@ -1,12 +1,38 @@
 import type { AiProvider } from "@prisma/client";
 import Decimal from "decimal.js";
 import { prisma } from "@/lib/db";
-import { PROVIDER_META } from "@/lib/providers-meta";
-import { compareProviderSpendDesc } from "@/lib/sort-vendors";
+import { compareProviderSpendDesc } from "@/lib/vendors/sort-vendors";
+import {
+  PROVIDER_META,
+  providerCategory,
+  providerMeta,
+} from "@/lib/vendors/providers-meta";
+import type { VendorCategory } from "@/lib/vendors/vendor-categories";
+import { VENDOR_CATEGORY_LABEL } from "@/lib/vendors/vendor-categories";
 
 const PROVIDER_ORDER: AiProvider[] = PROVIDER_META.map((p) => p.id);
 
 export type MonthColumn = { key: string; label: string };
+
+export type VendorRankRow = {
+  rank: number;
+  provider: AiProvider;
+  label: string;
+  category: VendorCategory;
+  categoryLabel: string;
+  total: string;
+  /** Number of expense line items (usage proxy) */
+  count: number;
+};
+
+export type CategorySpendRank = {
+  rank: number;
+  category: VendorCategory;
+  categoryLabel: string;
+  total: string;
+  lineItemCount: number;
+  vendorCount: number;
+};
 
 export type VendorSpendAnalytics = {
   asOf: string;
@@ -39,10 +65,74 @@ export type VendorSpendAnalytics = {
   }[];
   /** All month columns in display order: current month first, then M-1 … M-11 */
   allMonthColumns: MonthColumn[];
+  /** Vendors with spend, ordered by rolling-12 cost (highest first) */
+  costRankingRolling12: VendorRankRow[];
+  /** Same window, ordered by line-item count (usage volume) */
+  usageRankingRolling12: VendorRankRow[];
+  /** Current UTC month MTD, cost order */
+  costRankingCurrentMonth: VendorRankRow[];
+  /** Current UTC month MTD, usage order */
+  usageRankingCurrentMonth: VendorRankRow[];
+  /** Rolling-12 spend rolled up by vendor category, cost order */
+  categoryRankingRolling12: CategorySpendRank[];
 };
 
 function monthKeyUTC(d: Date): string {
   return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
+}
+
+function buildVendorRankRows(
+  rows: { provider: AiProvider; total: string; count: number }[],
+  sortFn: (
+    a: { provider: AiProvider; total: string; count: number },
+    b: { provider: AiProvider; total: string; count: number },
+  ) => number,
+): VendorRankRow[] {
+  const sorted = [...rows].sort(sortFn);
+  return sorted.map((r, i) => {
+    const cat = providerCategory(r.provider);
+    return {
+      rank: i + 1,
+      provider: r.provider,
+      label: providerMeta(r.provider)?.label ?? r.provider,
+      category: cat,
+      categoryLabel: VENDOR_CATEGORY_LABEL[cat],
+      total: r.total,
+      count: r.count,
+    };
+  });
+}
+
+function buildCategoryRanking(
+  rows: { provider: AiProvider; total: string; count: number }[],
+): CategorySpendRank[] {
+  const agg = new Map<
+    VendorCategory,
+    { total: Decimal; lineItemCount: number; vendors: Set<AiProvider> }
+  >();
+  for (const r of rows) {
+    if (Number(r.total) <= 0 && r.count <= 0) continue;
+    const cat = providerCategory(r.provider);
+    const cur = agg.get(cat) ?? {
+      total: new Decimal(0),
+      lineItemCount: 0,
+      vendors: new Set<AiProvider>(),
+    };
+    cur.total = cur.total.plus(r.total);
+    cur.lineItemCount += r.count;
+    cur.vendors.add(r.provider);
+    agg.set(cat, cur);
+  }
+  const list = [...agg.entries()]
+    .map(([category, v]) => ({
+      category,
+      categoryLabel: VENDOR_CATEGORY_LABEL[category],
+      total: v.total.toFixed(4),
+      lineItemCount: v.lineItemCount,
+      vendorCount: v.vendors.size,
+    }))
+    .sort((a, b) => Number(b.total) - Number(a.total));
+  return list.map((row, i) => ({ ...row, rank: i + 1 }));
 }
 
 /**
@@ -205,6 +295,41 @@ export async function getVendorSpendAnalytics(
       count: r.rowCount,
     }));
 
+  const currentMonthWithActivity = currentMonthByVendor.filter(
+    (r) => Number(r.total) > 0 || r.count > 0,
+  );
+
+  const costRankingRolling12 = buildVendorRankRows(rolling12ByVendor, (a, b) =>
+    compareProviderSpendDesc(
+      { provider: a.provider, amount: Number(a.total) },
+      { provider: b.provider, amount: Number(b.total) },
+    ),
+  );
+
+  const usageRankingRolling12 = buildVendorRankRows(rolling12ByVendor, (a, b) => {
+    if (b.count !== a.count) return b.count - a.count;
+    return Number(b.total) - Number(a.total);
+  });
+
+  const costRankingCurrentMonth = buildVendorRankRows(
+    currentMonthWithActivity,
+    (a, b) =>
+      compareProviderSpendDesc(
+        { provider: a.provider, amount: Number(a.total) },
+        { provider: b.provider, amount: Number(b.total) },
+      ),
+  );
+
+  const usageRankingCurrentMonth = buildVendorRankRows(
+    currentMonthWithActivity,
+    (a, b) => {
+      if (b.count !== a.count) return b.count - a.count;
+      return Number(b.total) - Number(a.total);
+    },
+  );
+
+  const categoryRankingRolling12 = buildCategoryRanking(rolling12ByVendor);
+
   return {
     asOf: now.toISOString(),
     timezoneNote:
@@ -218,5 +343,10 @@ export async function getVendorSpendAnalytics(
     currentMonthByVendor,
     rolling12ByVendor,
     monthlyMatrix,
+    costRankingRolling12,
+    usageRankingRolling12,
+    costRankingCurrentMonth,
+    usageRankingCurrentMonth,
+    categoryRankingRolling12,
   };
 }

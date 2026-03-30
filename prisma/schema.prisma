@@ -21,7 +21,10 @@ enum AiProvider {
   OPENAI
   CHATGPT
   GOOGLE_API
+  GOOGLE_WORKSPACE
+  HUBSPOT
   GEMINI
+  GEMINI_NANO_BANANA
   MANUS
   REPLIT
   VERCEL
@@ -31,6 +34,25 @@ enum AiProvider {
   AWS_BEDROCK
   MISTRAL
   COHERE
+  FIGMA
+  GITHUB
+  LINEAR
+  LOVABLE
+  NETLIFY
+  NOTION
+  RAILWAY
+  NEON
+  AZURE
+  CLERK
+  STRIPE
+  PLAID
+  DROPBOX
+  GOOGLE_CLOUD_STORAGE
+  DOCSEND
+  FLIPSNACK
+  TWILIO
+  RETELL_AI
+  VONAGE
   OTHER
 }
 
@@ -89,6 +111,7 @@ model EmailScanResult {
   parsedCurrency String?
   parsedDate     DateTime?
   confidence     Float?
+  parsedUsage    Json?
   status         String    @default("PENDING")
   expenseId      String?
   rawSnippet     String?

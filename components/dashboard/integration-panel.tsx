@@ -1,8 +1,8 @@
 "use client";
 
 import type { BillingAccount } from "@prisma/client";
-import { BILLING_ACCOUNT_LABEL } from "@/lib/billing-accounts";
-import type { ProviderMeta } from "@/lib/providers-meta";
+import { BILLING_ACCOUNT_LABEL } from "@/lib/expenses/billing-accounts";
+import type { ProviderMeta } from "@/lib/vendors/providers-meta";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";

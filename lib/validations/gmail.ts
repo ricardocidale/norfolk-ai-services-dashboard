@@ -11,6 +11,11 @@ export const gmailAuthPostSchema = z.object({
 
 export const gmailScanPostSchema = z.object({
   emails: z.array(z.string().email()).optional(),
+  /** standard = core AI/vendor domains; extended = more SaaS + broader subject keywords */
+  scope: z
+    .enum(["standard", "extended", "discover"])
+    .optional()
+    .default("standard"),
 });
 
 export const gmailResultsGetSchema = z.object({
@@ -20,12 +25,22 @@ export const gmailResultsGetSchema = z.object({
 export const gmailResultsPatchSchema = z.object({
   id: z.string().min(1, "id is required"),
   action: z.enum(["approve", "reject"]),
+  /** Set true to import a card-issuer email line despite an amount/date overlap (risk double-count). */
+  acknowledgeCardDuplicateRisk: z.boolean().optional(),
 });
 
+const trimmedNonEmpty = z
+  .string()
+  .transform((s) => s.trim())
+  .pipe(z.string().min(1));
+
 export const googleOAuthEnvSchema = z.object({
-  GOOGLE_OAUTH_CLIENT_ID: z.string().min(1),
-  GOOGLE_OAUTH_CLIENT_SECRET: z.string().min(1),
-  GOOGLE_OAUTH_REDIRECT_URI: z.string().url(),
+  GOOGLE_OAUTH_CLIENT_ID: trimmedNonEmpty,
+  GOOGLE_OAUTH_CLIENT_SECRET: trimmedNonEmpty,
+  GOOGLE_OAUTH_REDIRECT_URI: z
+    .string()
+    .transform((s) => s.trim())
+    .pipe(z.string().url()),
 });
 
 export type GmailAuthGetInput = z.infer<typeof gmailAuthGetSchema>;

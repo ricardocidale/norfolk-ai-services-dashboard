@@ -3,8 +3,8 @@
 import type { ReactNode } from "react";
 import { useCallback, useMemo, useState } from "react";
 import type { AiProvider, BillingAccount } from "@prisma/client";
-import { BILLING_ACCOUNT_LABEL } from "@/lib/billing-accounts";
-import { providerMeta } from "@/lib/providers-meta";
+import { BILLING_ACCOUNT_LABEL } from "@/lib/expenses/billing-accounts";
+import { providerMeta } from "@/lib/vendors/providers-meta";
 import {
   Accordion,
   AccordionContent,
@@ -19,6 +19,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { unwrapApiSuccessData } from "@/lib/http/api-response";
 
 export type VendorSpendRow = {
   provider: AiProvider;
@@ -61,6 +62,46 @@ type ParsedUsageNotes = {
   costByModel: Record<string, string>;
 };
 
+function parseGmailScanUsage(
+  notes: string | null,
+): Record<string, unknown> | null {
+  if (!notes) return null;
+  try {
+    const o = JSON.parse(notes) as Record<string, unknown>;
+    if (
+      o.source !== "gmail_invoice_scan" ||
+      o.usage == null ||
+      typeof o.usage !== "object"
+    ) {
+      return null;
+    }
+    return o.usage as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+}
+
+function formatGmailUsageLine(u: Record<string, unknown>): string {
+  const fmt = (v: unknown): string | null => {
+    if (typeof v === "number" && Number.isFinite(v)) return v.toLocaleString();
+    return null;
+  };
+  const bits: string[] = [];
+  const tt = fmt(u.tokensTotal);
+  if (tt) bits.push(`${tt} tok`);
+  else {
+    const ti = fmt(u.tokensIn);
+    const to = fmt(u.tokensOut);
+    if (ti || to) bits.push(`${ti ?? "—"} in / ${to ?? "—"} out`);
+  }
+  const sec = fmt(u.computeSeconds);
+  if (sec) bits.push(`${sec}s compute`);
+  if (typeof u.usageSummary === "string" && u.usageSummary.trim()) {
+    bits.push(u.usageSummary.trim());
+  }
+  return bits.length ? bits.join(" · ") : "Usage (see notes)";
+}
+
 function parseUsageNotes(notes: string | null): ParsedUsageNotes | null {
   if (!notes) return null;
   try {
@@ -98,30 +139,43 @@ function formatTokenCount(n: number): string {
 
 function UsageDetail({ notes }: { notes: string | null }) {
   const usage = parseUsageNotes(notes);
-  if (!usage || usage.totalTokens === 0) return null;
+  if (usage && usage.totalTokens > 0) {
+    const parts: string[] = [];
+    if (usage.inputTokens > 0)
+      parts.push(`${formatTokenCount(usage.inputTokens)} in`);
+    if (usage.outputTokens > 0)
+      parts.push(`${formatTokenCount(usage.outputTokens)} out`);
+    if (usage.cacheReadTokens > 0)
+      parts.push(`${formatTokenCount(usage.cacheReadTokens)} cache-read`);
 
-  const parts: string[] = [];
-  if (usage.inputTokens > 0)
-    parts.push(`${formatTokenCount(usage.inputTokens)} in`);
-  if (usage.outputTokens > 0)
-    parts.push(`${formatTokenCount(usage.outputTokens)} out`);
-  if (usage.cacheReadTokens > 0)
-    parts.push(`${formatTokenCount(usage.cacheReadTokens)} cache-read`);
+    const modelCosts = Object.entries(usage.costByModel);
 
-  const modelCosts = Object.entries(usage.costByModel);
-
-  return (
-    <span className="flex flex-col gap-0.5">
-      <span>{formatTokenCount(usage.totalTokens)} tokens ({parts.join(", ")})</span>
-      {usage.modelsUsed.length > 0 && (
-        <span className="text-muted-foreground">
-          {modelCosts.length > 0
-            ? modelCosts.map(([m, c]) => `${m}: ${c}`).join(", ")
-            : usage.modelsUsed.join(", ")}
+    return (
+      <span className="flex flex-col gap-0.5">
+        <span>
+          {formatTokenCount(usage.totalTokens)} tokens ({parts.join(", ")})
         </span>
-      )}
-    </span>
-  );
+        {usage.modelsUsed.length > 0 && (
+          <span className="text-muted-foreground">
+            {modelCosts.length > 0
+              ? modelCosts.map(([m, c]) => `${m}: ${c}`).join(", ")
+              : usage.modelsUsed.join(", ")}
+          </span>
+        )}
+      </span>
+    );
+  }
+
+  const gmailU = parseGmailScanUsage(notes);
+  if (gmailU) {
+    return (
+      <span className="text-muted-foreground">
+        {formatGmailUsageLine(gmailU)}
+      </span>
+    );
+  }
+
+  return null;
 }
 
 function cacheKey(
@@ -183,15 +237,13 @@ function VendorSpendAccordionInner({
       });
       try {
         const res = await fetch(`/api/expenses?${params.toString()}`);
-        const json = (await res.json()) as {
-          expenses?: ExpenseLine[];
-          error?: unknown;
-        };
+        const json = await res.json();
         if (!res.ok) {
           setCache((c) => ({ ...c, [key]: "error" }));
           return;
         }
-        const list = json.expenses ?? [];
+        const data = unwrapApiSuccessData<{ expenses: ExpenseLine[] }>(json);
+        const list = data?.expenses ?? [];
         setCache((c) => ({ ...c, [key]: list }));
       } catch {
         setCache((c) => ({ ...c, [key]: "error" }));

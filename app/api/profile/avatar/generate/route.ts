@@ -1,6 +1,6 @@
 import { auth } from "@clerk/nextjs/server";
 import { GoogleGenAI, PersonGeneration } from "@google/genai";
-import { NextResponse } from "next/server";
+import { jsonErr, jsonOk } from "@/lib/http/api-response";
 import { avatarGeneratePromptSchema } from "@/lib/validations/profile";
 
 export const runtime = "nodejs";
@@ -8,19 +8,17 @@ export const runtime = "nodejs";
 export async function POST(request: Request) {
   const { userId } = await auth();
   if (!userId) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    return jsonErr("Unauthorized", 401, { code: "UNAUTHORIZED" });
   }
 
   const apiKey =
     process.env.GOOGLE_GENAI_API_KEY?.trim() ||
     process.env.GEMINI_API_KEY?.trim();
   if (!apiKey) {
-    return NextResponse.json(
-      {
-        error:
-          "Image generation is not configured. Set GOOGLE_GENAI_API_KEY (or GEMINI_API_KEY) on the server.",
-      },
-      { status: 503 },
+    return jsonErr(
+      "Image generation is not configured. Set GOOGLE_GENAI_API_KEY (or GEMINI_API_KEY) on the server.",
+      503,
+      { code: "NOT_CONFIGURED" },
     );
   }
 
@@ -28,14 +26,15 @@ export async function POST(request: Request) {
   try {
     body = await request.json();
   } catch {
-    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+    return jsonErr("Invalid JSON body", 400, { code: "INVALID_JSON" });
   }
 
   const parsed = avatarGeneratePromptSchema.safeParse(body);
   if (!parsed.success) {
-    return NextResponse.json(
-      { error: parsed.error.flatten().fieldErrors.prompt?.[0] ?? "Invalid prompt" },
-      { status: 400 },
+    return jsonErr(
+      parsed.error.flatten().fieldErrors.prompt?.[0] ?? "Invalid prompt",
+      400,
+      { code: "VALIDATION" },
     );
   }
 
@@ -59,18 +58,17 @@ export async function POST(request: Request) {
     const bytes = first?.image?.imageBytes;
     if (!bytes) {
       const reason = first?.raiFilteredReason ?? "No image returned";
-      return NextResponse.json(
-        { error: `Generation blocked or empty: ${reason}` },
-        { status: 422 },
-      );
+      return jsonErr(`Generation blocked or empty: ${reason}`, 422, {
+        code: "GENERATION_BLOCKED",
+      });
     }
 
-    return NextResponse.json({
+    return jsonOk({
       mimeType: first.image?.mimeType ?? "image/png",
       imageBase64: bytes,
     });
   } catch (e) {
     const message = e instanceof Error ? e.message : "Image generation failed";
-    return NextResponse.json({ error: message }, { status: 502 });
+    return jsonErr(message, 502, { code: "GENERATION_FAILED" });
   }
 }

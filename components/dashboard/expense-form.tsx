@@ -5,8 +5,8 @@ import type { AiProvider, BillingAccount } from "@prisma/client";
 import {
   BILLING_ACCOUNT_LABEL,
   BILLING_ACCOUNT_ORDER,
-} from "@/lib/billing-accounts";
-import { PROVIDER_META } from "@/lib/providers-meta";
+} from "@/lib/expenses/billing-accounts";
+import { PROVIDER_META } from "@/lib/vendors/providers-meta";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -19,6 +19,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { apiErrorMessageFromBody } from "@/lib/http/api-response";
 
 export function ExpenseForm({ onCreated }: { onCreated: () => Promise<void> }) {
   const [provider, setProvider] = useState<AiProvider>("OPENAI");
@@ -55,7 +56,7 @@ export function ExpenseForm({ onCreated }: { onCreated: () => Promise<void> }) {
     const j = await res.json().catch(() => ({}));
     setSaving(false);
     if (!res.ok) {
-      setError(typeof j.error === "string" ? j.error : "Could not save.");
+      setError(apiErrorMessageFromBody(j) ?? "Could not save.");
       return;
     }
     setAmount("");

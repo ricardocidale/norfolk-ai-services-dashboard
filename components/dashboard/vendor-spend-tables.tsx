@@ -34,7 +34,7 @@ function formatUsd(s: string): string {
   })}`;
 }
 
-function fullMonthYearLabel(monthKey: string): string {
+export function fullMonthYearLabel(monthKey: string): string {
   const [y, m] = monthKey.split("-").map(Number);
   if (!y || !m) return monthKey;
   return new Date(Date.UTC(y, m - 1, 1)).toLocaleString("en-US", {
@@ -44,9 +44,9 @@ function fullMonthYearLabel(monthKey: string): string {
   });
 }
 
-type MatrixRow = VendorSpendAnalytics["monthlyMatrix"][number];
+export type MatrixRow = VendorSpendAnalytics["monthlyMatrix"][number];
 
-function MonthBreakdownMini({
+export function MonthBreakdownMini({
   row,
   columns,
 }: {
@@ -94,7 +94,7 @@ function MonthBreakdownMini({
 
 type MonthRow = { provider: AiProvider; total: string; count: number };
 
-function rowsForPriorMonth(
+export function rowsForPriorMonth(
   data: VendorSpendAnalytics,
   monthKey: string,
 ): MonthRow[] {

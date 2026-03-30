@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { jsonErr, jsonOk } from "@/lib/http/api-response";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { expenseUpdateSchema } from "@/lib/validations/expense";
@@ -13,14 +13,15 @@ export async function PATCH(request: Request, ctx: Params) {
   try {
     body = await request.json();
   } catch {
-    return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
+    return jsonErr("Invalid JSON", 400, { code: "INVALID_JSON" });
   }
 
   const parsed = expenseUpdateSchema.safeParse(body);
   if (!parsed.success) {
-    return NextResponse.json(
-      { error: parsed.error.flatten() },
-      { status: 400 },
+    return jsonErr(
+      parsed.error.issues.map((i) => i.message).join("; "),
+      400,
+      { code: "VALIDATION", details: parsed.error.flatten() },
     );
   }
 
@@ -53,11 +54,11 @@ export async function PATCH(request: Request, ctx: Params) {
       where: { id },
       data,
     });
-    return NextResponse.json({
+    return jsonOk({
       expense: { ...expense, amount: expense.amount.toString() },
     });
   } catch {
-    return NextResponse.json({ error: "Not found" }, { status: 404 });
+    return jsonErr("Not found", 404, { code: "NOT_FOUND" });
   }
 }
 
@@ -65,8 +66,8 @@ export async function DELETE(_request: Request, ctx: Params) {
   const { id } = await ctx.params;
   try {
     await prisma.expense.delete({ where: { id } });
-    return NextResponse.json({ ok: true });
+    return jsonOk({ deleted: true });
   } catch {
-    return NextResponse.json({ error: "Not found" }, { status: 404 });
+    return jsonErr("Not found", 404, { code: "NOT_FOUND" });
   }
 }

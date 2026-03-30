@@ -2,6 +2,12 @@ import { OAuth2Client } from "google-auth-library";
 import { prisma } from "@/lib/db";
 import { googleOAuthEnvSchema } from "@/lib/validations/gmail";
 
+/**
+ * OAuth contract: `GOOGLE_OAUTH_REDIRECT_URI` must match the Google Cloud client
+ * (e.g. https://spend.norfolk.ai/api/gmail/auth/callback). `state` is the target
+ * mailbox email. The callback route runs under the same Clerk session as the admin
+ * who started the flow (`middleware` protects `/api/*`). Scopes are read-only Gmail.
+ */
 const SCOPES = ["https://www.googleapis.com/auth/gmail.readonly"] as const;
 
 export function getOAuth2Client(): OAuth2Client {

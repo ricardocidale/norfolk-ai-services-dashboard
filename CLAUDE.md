@@ -5,7 +5,7 @@ alwaysApply: true
 
 # Norfolk AI Expense Pulse — Project Context for Cursor/Claude
 
-> Last updated: March 29, 2026
+> Last updated: March 30, 2026
 > READ THIS BEFORE MAKING ANY CHANGES.
 
 ---
@@ -27,9 +27,11 @@ Tracks AI service spending across Norfolk Group accounts.
 - `CIDALE` → ricardo@cidale.com
 
 **Vendors (AiProvider enum in schema.prisma):**
-ANTHROPIC, OPENAI, CHATGPT, CURSOR, GEMINI, GOOGLE_API,
-REPLIT, ELEVENLABS, PERPLEXITY, MANUS, VERCEL,
-MIDJOURNEY, AWS_BEDROCK, MISTRAL, COHERE, OTHER
+REPLIT, MANUS, GEMINI, GEMINI_NANO_BANANA (Nano Banana / Gemini image SKUs),
+ANTHROPIC, OPENAI, CHATGPT, PERPLEXITY (monthly env sync + manual), CURSOR, GOOGLE_API, HUBSPOT, VERCEL,
+ELEVENLABS, RETELL_AI, MIDJOURNEY, AWS_BEDROCK, MISTRAL, COHERE, FIGMA, TWILIO, VONAGE, OTHER
+
+Dashboard **vendor order** follows `lib/vendors/providers-meta.ts` (high manual spend first: Replit, Manus, Gemini family, then API vendors and **Perplexity** with env-based monthly sync via `PERPLEXITY_MONTHLY_USD`).
 
 ---
 
@@ -85,18 +87,17 @@ lib/
   nav-config.ts                   ← MAIN_NAV, ADMIN_NAV, BREADCRUMB_LABELS
   utils.ts                        ← cn() utility
   db.ts                           ← Prisma client singleton
-  integrations/                   ← external API clients (OpenAI, Anthropic, etc.)
+  expenses/                       ← dedup vs API/email, billing labels, vendor→BillingAccount defaults
+  dashboard/                      ← client-only dashboard prefs (e.g. show charts)
+  vendors/                        ← PROVIDER_META, provider sort helpers
+  integrations/                   ← sdk-clients, OAuth, vendor sync, Gmail/invoice parsing
   analytics/                      ← analytics helpers
   validations/                    ← Zod schemas for API inputs and forms
   admin/                          ← expense source registry helpers (admin UI/API)
-  providers-meta.ts               ← vendor labels, sync types, docs links
-  sdk-clients.ts                  ← OpenAI/Anthropic client construction from env
-  billing-accounts.ts             ← billing account constants and mapping
-  sort-vendors.ts                 ← vendor ordering helpers
 prisma/
   schema.prisma                   ← database schema
   seed.ts                         ← seed data (5 records)
-  migrations/                     ← 2 migrations applied
+  migrations/                     ← applied migrations (see folder; includes enum extensions)
 public/
   logo-icone-azul.svg             ← Norfolk AI blue icon (PRIMARY, dark bg)
   logo-icone-branco.svg           ← Norfolk AI white icon (light bg)
@@ -111,15 +112,29 @@ prisma.config.ts                  ← ROOT level Prisma config
 next.config.ts                    ← ROOT level Next.js config
 docker-compose.yml                ← Local Postgres for dev
 .env.example                      ← Full env var template
+.agents/
+  skills/neon-postgres/SKILL.md   ← Cursor/workspace agent skill (compact; link-out to Neon docs)
+.claude/
+  skills/neon-postgres/SKILL.md   ← Claude Code project skill — **keep identical** to `.agents/...` copy
 ```
 
 - Other files under `lib/` may exist — search `lib/` before duplicating logic.
 
 ---
 
+## AGENT SKILLS & FILE HYGIENE
+
+- **Where skills live:** `.agents/skills/<name>/SKILL.md` for Cursor-oriented workflows; **mirror** the same file under `.claude/skills/<name>/SKILL.md` so Claude Code loads the same guidance. Do not maintain two different bodies of text.
+- **Skill file size:** Keep each `SKILL.md` **short** (rough target **under ~120 lines**). Prefer links to vendor doc indexes (e.g. Neon `https://neon.com/docs/llms.txt`) and `.md` URLs over copying long manuals into the repo.
+- **Application source files:** Avoid letting a single module grow without bound. If a `.ts` / `.tsx` file approaches **~500 lines** while you are adding features, **split** by concern (e.g. extract hooks, table subcomponents, or integration helpers) instead of stacking more into one file.
+- **Docs in repo:** Reserve `README.md` / `CLAUDE.md` for project-specific truth; defer vendor encyclopedias to official docs or skills that only point there.
+
+---
+
 ## HTTP API (contracts)
 
 - **Full table and create-body fields:** `README.md` → **HTTP API (summary)**.
+- **JSON envelope:** Success `{ ok: true, data }`, errors `{ ok: false, error: { message, code?, details? } }` — `lib/http/api-response.ts` (`jsonOk` / `jsonErr`). Clients use `unwrapApiSuccessData` / `apiErrorMessageFromBody`.
 - **Shapes:** `lib/validations/expense.ts` and each `app/api/**/route.ts` handler (keep Zod, Prisma, and docs aligned).
 - **Route map** (handlers live under `app/api/`):
   - Expenses: `GET`/`POST` `/api/expenses` (`GET`: optional `from`/`to` ISO, `provider`, `take`), `PATCH`/`DELETE` `/api/expenses/[id]`
@@ -127,7 +142,10 @@ docker-compose.yml                ← Local Postgres for dev
   - Reporting: `GET` `/api/summary`, `GET` `/api/analytics/vendor-spend`
   - Admin UI: `/admin/*` — signed-in users with `publicMetadata.role === "admin"` or default owner email (`lib/admin/is-app-admin.ts`)
   - Admin probe: `POST` `/api/admin/probe/[provider]` — same gate as `/admin/*`
+  - Admin dedup audit: `GET` `/api/admin/dedup-audit` — same gate; deterministic duplicate-group report (`lib/expenses/dedup.ts`)
   - Sync: `POST` `/api/sync/[provider]` — `openai`, `anthropic`, `chatgpt`, `perplexity` (query `billingAccount`; optional JSON body `start`/`end` and/or `month` per provider — see route implementation)
+  - Gmail scan: `POST` `/api/gmail/scan` — optional JSON `{ "scope": "standard" | "extended" | "discover", "emails"?: string[] }`. **Extended** adds SaaS/cloud domains and usage-style subject keywords. **Discover** uses invoice/payment subject lines only (any sender, last ~120 days), **excluding** broad `statement` / `summary` / `report` keywords to reduce card-issuer statement noise. Unknown merchants import as `OTHER` with the parsed company name. **Card-issuer** From domains (Citi, Chase, Amex, etc.): approve is **409-blocked** if another non-seed expense matches the same amount (±5%) within ±2 days — use `PATCH` body `acknowledgeCardDuplicateRisk: true` to force import (`lib/expenses/card-issuer-email.ts`, `dedup.ts`, `app/api/gmail/results/route.ts`). Parsed usage is stored on `EmailScanResult.parsedUsage` and copied into expense `notes.usage` on approve (`lib/integrations/gmail-scan.ts`, `invoice-parser.ts`).
+  - Env / SDK contracts: OpenAI key resolution is centralized in `lib/integrations/openai-env.ts` (sync, probe, `getOpenAIClient` in `lib/integrations/sdk-clients.ts`). Google OAuth env vars are trimmed in `lib/validations/gmail.ts` (`googleOAuthEnvSchema`).
 
 ---
 
@@ -173,7 +191,7 @@ export const config = {
 - **Production:** Neon PostgreSQL (hostname in Vercel env vars — do not hardcode)
 - **Local dev:** Docker Postgres — see `docker-compose.yml` and `.env.example`
 - In the maintainer's setup, `DATABASE_URL` points to Neon. New contributors may use Docker only.
-- 2 migrations applied: `20250328180000_init` and `20260328120000_add_chatgpt_provider`
+- Migrations under `prisma/migrations/` (init, provider enum extensions, Gmail scanner tables, etc.) — run `npm run db:migrate` after pull when new folders appear
 - Seed: 5 expense records
 - `prisma.config.ts` at root replaces deprecated `package.json#prisma`
 - Prisma Client is generated to `lib/generated/prisma` (gitignored); `tsconfig.json` maps `@prisma/client` to that folder. `postinstall` runs `prisma generate`. This avoids Windows EPERM when replacing `node_modules/.prisma/client/query_engine-*.node` under AV or a running Node process.
@@ -253,3 +271,4 @@ npm run db:seed      # Seed database
 8. **COMMIT** only when the user explicitly asks — offer the commit message, push only when requested
 9. Local dev uses Docker Postgres — do not assume localhost means broken
 10. Installed-but-unused packages (full list under "Installed but not yet wired" section) are intentional — do not remove them
+11. **Skills:** When updating Neon guidance, edit **both** `.agents/skills/neon-postgres/SKILL.md` and `.claude/skills/neon-postgres/SKILL.md` to the same content; keep skills compact and link-heavy per **AGENT SKILLS & FILE HYGIENE** above

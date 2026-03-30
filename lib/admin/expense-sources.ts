@@ -1,6 +1,11 @@
 import type { AiProvider } from "@prisma/client";
-import { PROVIDER_META } from "@/lib/providers-meta";
-import { vendorBillingEmail } from "@/lib/vendor-billing-defaults";
+import {
+  applyEnvToProvenance,
+  baseProvenanceForProvider,
+  type SourceProvenance,
+} from "@/lib/admin/expense-source-provenance";
+import { vendorBillingEmail } from "@/lib/expenses/vendor-billing-defaults";
+import { PROVIDER_META } from "@/lib/vendors/providers-meta";
 
 export type ExpenseSourceStatus = {
   providerId: AiProvider;
@@ -10,8 +15,15 @@ export type ExpenseSourceStatus = {
   docsUrl?: string;
   /** Human-readable billing email for this vendor (from vendor-billing-defaults) */
   billingEmail: string;
-  /** Whether minimum env is present to call vendor APIs */
+  /**
+   * Primary automation path is configured (API keys or monthly USD env as required).
+   * Perplexity: only PERPLEXITY_MONTHLY_USD — API key alone does not satisfy this.
+   */
   envSatisfied: boolean;
+  /** UX: data path, certainty, redundancy — for Admin Sources reporting */
+  provenance: SourceProvenance;
+  /** Perplexity: PERPLEXITY_API_KEY set without PERPLEXITY_MONTHLY_USD */
+  perplexityProbeOnly?: boolean;
 };
 
 function envPresent(key: string): boolean {
@@ -38,21 +50,67 @@ export function getExpenseSourceStatuses(): ExpenseSourceStatus[] {
     };
 
     if (p.sync === "openai") {
-      return { ...base, syncType: "openai" as const, envSatisfied: openaiKey };
-    }
-    if (p.sync === "anthropic") {
-      return { ...base, syncType: "anthropic" as const, envSatisfied: anthropicKey };
-    }
-    if (p.sync === "chatgpt") {
-      return { ...base, syncType: "chatgpt" as const, envSatisfied: chatgptConfigured };
-    }
-    if (p.sync === "perplexity") {
+      const syncType = "openai" as const;
+      const baseProv = baseProvenanceForProvider(p.id, p.label, syncType);
       return {
         ...base,
-        syncType: "perplexity" as const,
-        envSatisfied: perplexityMonthly || perplexityApiKey,
+        syncType,
+        envSatisfied: openaiKey,
+        provenance: applyEnvToProvenance(baseProv, syncType, {
+          envSatisfied: openaiKey,
+        }),
       };
     }
-    return { ...base, syncType: "manual" as const, envSatisfied: true };
+    if (p.sync === "anthropic") {
+      const syncType = "anthropic" as const;
+      const baseProv = baseProvenanceForProvider(p.id, p.label, syncType);
+      return {
+        ...base,
+        syncType,
+        envSatisfied: anthropicKey,
+        provenance: applyEnvToProvenance(baseProv, syncType, {
+          envSatisfied: anthropicKey,
+        }),
+      };
+    }
+    if (p.sync === "chatgpt") {
+      const syncType = "chatgpt" as const;
+      const baseProv = baseProvenanceForProvider(p.id, p.label, syncType);
+      return {
+        ...base,
+        syncType,
+        envSatisfied: chatgptConfigured,
+        provenance: applyEnvToProvenance(baseProv, syncType, {
+          envSatisfied: chatgptConfigured,
+        }),
+      };
+    }
+    if (p.sync === "perplexity") {
+      const syncType = "perplexity" as const;
+      const baseProv = baseProvenanceForProvider(p.id, p.label, syncType);
+      const perplexityProbeOnly = perplexityApiKey && !perplexityMonthly;
+      return {
+        ...base,
+        syncType,
+        envSatisfied: perplexityMonthly,
+        perplexityProbeOnly: perplexityProbeOnly || undefined,
+        provenance: applyEnvToProvenance(baseProv, syncType, {
+          envSatisfied: perplexityMonthly,
+          perplexityProbeOnly,
+        }),
+      };
+    }
+    const syncType = "manual" as const;
+    const baseProv = baseProvenanceForProvider(p.id, p.label, syncType);
+    return {
+      ...base,
+      syncType,
+      envSatisfied: true,
+      provenance: applyEnvToProvenance(baseProv, syncType, {
+        envSatisfied: true,
+      }),
+    };
   });
 }
+
+export type { SourceProvenance } from "@/lib/admin/expense-source-provenance";

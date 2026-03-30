@@ -1,6 +1,6 @@
 import { auth } from "@clerk/nextjs/server";
 import { BillingAccount } from "@prisma/client";
-import { NextResponse } from "next/server";
+import { jsonErr, jsonOk } from "@/lib/http/api-response";
 import { isAppAdmin } from "@/lib/admin/is-app-admin";
 import { prisma } from "@/lib/db";
 import {
@@ -15,7 +15,7 @@ import {
   defaultSyncRangeEnd,
   defaultSyncRangeStart,
 } from "@/lib/integrations/sync-range";
-import { vendorBillingAccount } from "@/lib/vendor-billing-defaults";
+import { vendorBillingAccount } from "@/lib/expenses/vendor-billing-defaults";
 
 export const dynamic = "force-dynamic";
 /** OpenAI + Anthropic 12‑month parallel sync; allow headroom beyond a single-provider route. */
@@ -49,10 +49,10 @@ function parseBillingAccountOverride(v: unknown): BillingAccount | null {
 export async function POST(request: Request) {
   const { userId } = await auth();
   if (!userId) {
-    return NextResponse.json({ ok: false, message: "Unauthorized" }, { status: 401 });
+    return jsonErr("Unauthorized", 401, { code: "UNAUTHORIZED" });
   }
   if (!(await isAppAdmin())) {
-    return NextResponse.json({ ok: false, message: "Forbidden" }, { status: 403 });
+    return jsonErr("Forbidden", 403, { code: "FORBIDDEN" });
   }
 
   let body: {
@@ -178,8 +178,8 @@ export async function POST(request: Request) {
     .filter(Boolean)
     .join(" ");
 
-  return NextResponse.json({
-    ok: anyOk,
+  return jsonOk({
+    anyOk,
     apiSyncOk: apiOk,
     removedSampleRows,
     steps,

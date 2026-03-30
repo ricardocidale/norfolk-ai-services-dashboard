@@ -1,16 +1,13 @@
-import { NextResponse } from "next/server";
+import { jsonErr, jsonOk } from "@/lib/http/api-response";
 import { AiProvider, Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
-import { expenseCreateSchema } from "@/lib/validations/expense";
+import { findOverlappingApiExpense } from "@/lib/expenses/dedup";
+import {
+  expenseCreateSchema,
+  parseAiProviderQueryParam,
+} from "@/lib/validations/expense";
 
 export const dynamic = "force-dynamic";
-
-function parseProvider(v: string | null): AiProvider | undefined {
-  if (!v) return undefined;
-  return (Object.values(AiProvider) as string[]).includes(v)
-    ? (v as AiProvider)
-    : undefined;
-}
 
 function parseIsoBoundary(v: string | null): Date | undefined {
   if (!v?.trim()) return undefined;
@@ -23,21 +20,19 @@ const MAX_RANGE_MS = 400 * 24 * 60 * 60 * 1000;
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const take = Math.min(Number(searchParams.get("take") ?? "100"), 500);
-  const provider = parseProvider(searchParams.get("provider"));
+  const provider = parseAiProviderQueryParam(searchParams.get("provider"));
   const from = parseIsoBoundary(searchParams.get("from"));
   const to = parseIsoBoundary(searchParams.get("to"));
 
   if (from && to && from > to) {
-    return NextResponse.json(
-      { error: "`from` must be before or equal to `to`." },
-      { status: 400 },
-    );
+    return jsonErr("`from` must be before or equal to `to`.", 400, {
+      code: "INVALID_RANGE",
+    });
   }
   if (from && to && to.getTime() - from.getTime() > MAX_RANGE_MS) {
-    return NextResponse.json(
-      { error: "Date range too large (max ~400 days)." },
-      { status: 400 },
-    );
+    return jsonErr("Date range too large (max ~400 days).", 400, {
+      code: "INVALID_RANGE",
+    });
   }
 
   const incurredAt =
@@ -57,7 +52,7 @@ export async function GET(request: Request) {
     take,
   });
 
-  return NextResponse.json({
+  return jsonOk({
     expenses: items.map((e) => ({
       ...e,
       amount: e.amount.toString(),
@@ -70,20 +65,38 @@ export async function POST(request: Request) {
   try {
     body = await request.json();
   } catch {
-    return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
+    return jsonErr("Invalid JSON", 400, { code: "INVALID_JSON" });
   }
 
   const parsed = expenseCreateSchema.safeParse(body);
   if (!parsed.success) {
-    return NextResponse.json(
-      { error: parsed.error.flatten() },
-      { status: 400 },
+    return jsonErr(
+      parsed.error.issues.map((i) => i.message).join("; "),
+      400,
+      { code: "VALIDATION", details: parsed.error.flatten() },
     );
   }
 
   const v = parsed.data;
   const incurredAt =
     typeof v.incurredAt === "string" ? new Date(v.incurredAt) : v.incurredAt;
+
+  const overlap = await findOverlappingApiExpense({
+    provider: v.provider as AiProvider,
+    date: incurredAt,
+    amount: v.amount,
+    currency: v.currency,
+  });
+  if (overlap) {
+    return jsonErr(
+      `Duplicate blocked: an API-synced expense already covers this charge (${overlap.source}, $${overlap.amount} on ${overlap.incurredAt.toISOString().slice(0, 10)}).`,
+      409,
+      {
+        code: "DUPLICATE_API_EXPENSE",
+        details: { existingExpenseId: overlap.id },
+      },
+    );
+  }
 
   try {
     const expense = await prisma.expense.create({
@@ -102,11 +115,11 @@ export async function POST(request: Request) {
       },
     });
 
-    return NextResponse.json({
+    return jsonOk({
       expense: { ...expense, amount: expense.amount.toString() },
     });
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Create failed";
-    return NextResponse.json({ error: msg }, { status: 409 });
+    return jsonErr(msg, 409, { code: "CREATE_FAILED" });
   }
 }

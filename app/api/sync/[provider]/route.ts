@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { jsonErr, jsonOk } from "@/lib/http/api-response";
 import { BillingAccount } from "@prisma/client";
 import { syncAnthropicUsage } from "@/lib/integrations/anthropic-sync";
 import { syncChatGPTSpend } from "@/lib/integrations/chatgpt-sync";
@@ -42,7 +42,16 @@ export async function POST(request: Request, ctx: Params) {
         startTime: start,
         endTime: end,
       });
-      return NextResponse.json(result, { status: result.ok ? 200 : 422 });
+      if (!result.ok) {
+        return jsonErr(result.message, 422, {
+          code: "SYNC_FAILED",
+          details: { imported: result.imported },
+        });
+      }
+      return jsonOk({
+        message: result.message,
+        imported: result.imported,
+      });
     }
     case "anthropic": {
       const result = await syncAnthropicUsage({
@@ -50,30 +59,54 @@ export async function POST(request: Request, ctx: Params) {
         startTime: start,
         endTime: end,
       });
-      return NextResponse.json(result, { status: result.ok ? 200 : 422 });
+      if (!result.ok) {
+        return jsonErr(result.message, 422, {
+          code: "SYNC_FAILED",
+          details: { imported: result.imported },
+        });
+      }
+      return jsonOk({
+        message: result.message,
+        imported: result.imported,
+      });
     }
     case "chatgpt": {
       const result = await syncChatGPTSpend({
         billingAccount,
         month: body.month,
       });
-      return NextResponse.json(result, { status: result.ok ? 200 : 422 });
+      if (!result.ok) {
+        return jsonErr(result.message, 422, {
+          code: "SYNC_FAILED",
+          details: { imported: result.imported },
+        });
+      }
+      return jsonOk({
+        message: result.message,
+        imported: result.imported,
+      });
     }
     case "perplexity": {
       const result = await syncPerplexitySpend({
         billingAccount,
         month: body.month,
       });
-      return NextResponse.json(result, { status: result.ok ? 200 : 422 });
+      if (!result.ok) {
+        return jsonErr(result.message, 422, {
+          code: "SYNC_FAILED",
+          details: { imported: result.imported },
+        });
+      }
+      return jsonOk({
+        message: result.message,
+        imported: result.imported,
+      });
     }
     default:
-      return NextResponse.json(
-        {
-          ok: false,
-          message: `Unknown sync target "${provider}". Use openai, anthropic, chatgpt, or perplexity.`,
-          imported: 0,
-        },
-        { status: 400 },
+      return jsonErr(
+        `Unknown sync target "${provider}". Use openai, anthropic, chatgpt, or perplexity.`,
+        400,
+        { code: "UNKNOWN_PROVIDER", details: { imported: 0 } },
       );
   }
 }

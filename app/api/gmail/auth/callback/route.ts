@@ -6,11 +6,12 @@ export const dynamic = "force-dynamic";
 /**
  * GET /api/gmail/auth/callback?code=xxx&state=email
  * Google OAuth redirect — exchanges the auth code for tokens, then redirects
- * the user back to the admin email-scan page.
+ * to `/admin/email-scan`. Query `state` is the Gmail address (must match the
+ * mailbox being linked). `error` from Google is forwarded as `?error=` on redirect.
  *
- * Auth note: this runs inside the admin's already-authenticated browser session
- * (the OAuth popup). Clerk middleware protects all /api/* routes so the Clerk
- * session cookie must be present for this to succeed.
+ * Clerk: `middleware` requires a session for `/api/*`, so the popup must complete
+ * while the admin is signed in (same-site cookies). This handler does not call
+ * Clerk APIs; it only persists tokens via `exchangeCodeForTokens`.
  */
 export async function GET(request: NextRequest): Promise<NextResponse> {
   const { searchParams } = new URL(request.url);

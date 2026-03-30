@@ -1,32 +1,28 @@
 import { auth } from "@clerk/nextjs/server";
-import { NextResponse, type NextRequest } from "next/server";
+import { type NextRequest } from "next/server";
+import { jsonErr, jsonOk } from "@/lib/http/api-response";
 import { isAppAdmin } from "@/lib/admin/is-app-admin";
 import { prisma } from "@/lib/db";
 import { scanGmailForInvoices } from "@/lib/integrations/gmail-scan";
 import { gmailScanPostSchema } from "@/lib/validations/gmail";
 
 export const dynamic = "force-dynamic";
-export const maxDuration = 120;
+export const maxDuration = 180;
 export const runtime = "nodejs";
 
 /**
  * POST /api/gmail/scan
  * Body (optional): { emails: string[] }
  * Scans all connected Gmail accounts (or specified emails) for vendor invoices.
+ * Body: optional { emails?, scope? } — `extended` = more SaaS domains; `discover` = subject-only (invoice/payment keywords, any sender).
  */
-export async function POST(request: NextRequest): Promise<NextResponse> {
+export async function POST(request: NextRequest): Promise<Response> {
   const { userId } = await auth();
   if (!userId) {
-    return NextResponse.json(
-      { success: false, error: "Unauthorized", data: null },
-      { status: 401 },
-    );
+    return jsonErr("Unauthorized", 401, { code: "UNAUTHORIZED" });
   }
   if (!(await isAppAdmin())) {
-    return NextResponse.json(
-      { success: false, error: "Forbidden", data: null },
-      { status: 403 },
-    );
+    return jsonErr("Forbidden", 403, { code: "FORBIDDEN" });
   }
 
   let rawBody: unknown = {};
@@ -38,13 +34,10 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
   const parsed = gmailScanPostSchema.safeParse(rawBody);
   if (!parsed.success) {
-    return NextResponse.json(
-      {
-        success: false,
-        error: parsed.error.issues.map((i) => i.message).join("; "),
-        data: null,
-      },
-      { status: 400 },
+    return jsonErr(
+      parsed.error.issues.map((i) => i.message).join("; "),
+      400,
+      { code: "VALIDATION" },
     );
   }
 
@@ -57,28 +50,27 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   }
 
   if (emails.length === 0) {
-    return NextResponse.json(
-      { success: false, error: "No Gmail accounts connected.", data: null },
-      { status: 400 },
-    );
+    return jsonErr("No Gmail accounts connected.", 400, {
+      code: "NO_GMAIL_CONNECTIONS",
+    });
   }
 
+  const scope = parsed.data.scope;
+
   const results = await Promise.all(
-    emails.map((email) => scanGmailForInvoices(email)),
+    emails.map((email) => scanGmailForInvoices(email, { scope })),
   );
 
   const totalNew = results.reduce((s, r) => s + r.newResults, 0);
   const totalScanned = results.reduce((s, r) => s + r.scanned, 0);
   const allErrors = results.flatMap((r) => r.errors);
 
-  return NextResponse.json({
-    success: allErrors.length === 0,
-    error: allErrors.length > 0 ? allErrors.join("; ") : null,
-    data: {
-      message: `Scanned ${totalScanned} emails, found ${totalNew} new invoice(s).${
-        allErrors.length > 0 ? ` ${allErrors.length} error(s).` : ""
-      }`,
-      results,
-    },
+  return jsonOk({
+    scanSucceeded: allErrors.length === 0,
+    warnings: allErrors,
+    message: `Scanned ${totalScanned} emails (${scope}), found ${totalNew} new candidate(s).${
+      allErrors.length > 0 ? ` ${allErrors.length} note(s)/error(s).` : ""
+    }`,
+    results,
   });
 }

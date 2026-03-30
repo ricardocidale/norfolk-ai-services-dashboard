@@ -69,6 +69,7 @@ export default async function AdminPage(): Promise<React.JSX.Element> {
     parsedCurrency: r.parsedCurrency,
     parsedDate: r.parsedDate?.toISOString() ?? null,
     confidence: r.confidence,
+    parsedUsage: r.parsedUsage,
     status: r.status,
     expenseId: r.expenseId,
     rawSnippet: r.rawSnippet,
