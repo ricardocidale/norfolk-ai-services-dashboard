@@ -128,10 +128,7 @@ export function EmailScanClient({
         data: { url: string } | null;
       };
       if (json.success && json.data?.url) {
-        window.open(json.data.url, "_blank", "width=600,height=700");
-        setToast(
-          `Google consent window opened for ${email}. Complete sign-in, then return here.`,
-        );
+        window.location.href = json.data.url;
       } else {
         setToast(json.error ?? "Failed to get auth URL.");
       }
