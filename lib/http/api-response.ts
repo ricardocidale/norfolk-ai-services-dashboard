@@ -3,6 +3,14 @@ import { NextResponse } from "next/server";
 /**
  * Standard JSON envelope for app API routes (see README HTTP API).
  * Success: `{ ok: true, data }`. Failure: `{ ok: false, error: { message, code?, details? } }`.
+ *
+ * **Conventional `error.code` values** (not exhaustive; routes may add more):
+ * - `UNAUTHORIZED` — no session
+ * - `FORBIDDEN` — signed in but not allowed (e.g. non-admin on `/api/admin/*`)
+ * - `VALIDATION` / `INVALID_JSON` — bad input
+ * - `NOT_FOUND` — missing resource
+ * - `SYNC_FAILED` — provider sync returned failure (`422` on `/api/sync/*`)
+ * - `UPSTREAM_*` — vendor API errors from probes or integrations
  */
 export type ApiErrorBody = {
   message: string;

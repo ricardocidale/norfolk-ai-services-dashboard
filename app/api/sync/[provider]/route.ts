@@ -7,7 +7,7 @@ import { syncPerplexitySpend } from "@/lib/integrations/perplexity-sync";
 
 export const dynamic = "force-dynamic";
 /** OpenAI / Anthropic 12‑month sync issues many paginated HTTP calls + DB upserts; allow headroom on Vercel (plan max still applies). */
-export const maxDuration = 120;
+export const maxDuration = 300;
 export const runtime = "nodejs";
 
 type Params = { params: Promise<{ provider: string }> };

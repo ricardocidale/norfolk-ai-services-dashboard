@@ -317,6 +317,16 @@ function getUsageTriplet(
   };
 }
 
+function isLikelyMissingUsageScope(message: string): boolean {
+  const m = message.toLowerCase();
+  return (
+    m.includes("openai completions usage api 403") ||
+    m.includes("insufficient permissions") ||
+    m.includes("missing scopes") ||
+    m.includes("api.usage.read")
+  );
+}
+
 export async function syncOpenAIUsage(options: {
   billingAccount: BillingAccount;
   startTime?: Date;
@@ -340,7 +350,7 @@ export async function syncOpenAIUsage(options: {
   const headers = orgHeaders(apiKey);
   const usageWarnings: string[] = [];
 
-  let completionsByDay: Map<string, UsageAgg>;
+  let completionsByDay = new Map<string, UsageAgg>();
   try {
     completionsByDay = await fetchOrganizationUsageIntoMap(
       headers,
@@ -352,12 +362,18 @@ export async function syncOpenAIUsage(options: {
     );
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
-    return {
-      ok: false,
-      message: msg,
-      imported: 0,
-      provider: "OPENAI",
-    };
+    if (isLikelyMissingUsageScope(msg)) {
+      usageWarnings.push(
+        "completions usage omitted: key missing api.usage.read scope",
+      );
+    } else {
+      return {
+        ok: false,
+        message: msg,
+        imported: 0,
+        provider: "OPENAI",
+      };
+    }
   }
 
   let embeddingsByDay = new Map<string, EmbeddingsAgg>();

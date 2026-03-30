@@ -3,6 +3,10 @@ import { prisma } from "@/lib/db";
 import { getExpenseSourceStatuses } from "@/lib/admin/expense-sources";
 import { toAdminUserRow } from "@/lib/admin/clerk-user-dto";
 import { AdminHub, type AdminHubProps } from "@/components/admin/admin-hub";
+import {
+  emailScanResultPublicSelect,
+  withParsedUsagePlaceholder,
+} from "@/lib/prisma/email-scan-result-public";
 
 export const dynamic = "force-dynamic";
 
@@ -27,11 +31,13 @@ export default async function AdminPage(): Promise<React.JSX.Element> {
     }),
     prisma.emailScanResult.findMany({
       where: { status: "PENDING" },
+      select: emailScanResultPublicSelect,
       orderBy: { receivedAt: "desc" },
       take: 100,
     }),
     prisma.emailScanResult.findMany({
       where: { status: { in: ["IMPORTED", "REJECTED"] } },
+      select: emailScanResultPublicSelect,
       orderBy: { createdAt: "desc" },
       take: 50,
     }),
@@ -57,23 +63,26 @@ export default async function AdminPage(): Promise<React.JSX.Element> {
     };
   });
 
-  const scanResults = [...pendingResults, ...recentResults].map((r) => ({
-    id: r.id,
-    gmailEmail: r.gmailEmail,
-    gmailMessageId: r.gmailMessageId,
-    subject: r.subject,
-    fromEmail: r.fromEmail,
-    receivedAt: r.receivedAt.toISOString(),
-    parsedVendor: r.parsedVendor,
-    parsedAmount: r.parsedAmount?.toString() ?? null,
-    parsedCurrency: r.parsedCurrency,
-    parsedDate: r.parsedDate?.toISOString() ?? null,
-    confidence: r.confidence,
-    parsedUsage: r.parsedUsage,
-    status: r.status,
-    expenseId: r.expenseId,
-    rawSnippet: r.rawSnippet,
-  }));
+  const scanResults = [...pendingResults, ...recentResults].map((r) => {
+    const u = withParsedUsagePlaceholder(r);
+    return {
+      id: u.id,
+      gmailEmail: u.gmailEmail,
+      gmailMessageId: u.gmailMessageId,
+      subject: u.subject,
+      fromEmail: u.fromEmail,
+      receivedAt: u.receivedAt.toISOString(),
+      parsedVendor: u.parsedVendor,
+      parsedAmount: u.parsedAmount?.toString() ?? null,
+      parsedCurrency: u.parsedCurrency,
+      parsedDate: u.parsedDate?.toISOString() ?? null,
+      confidence: u.confidence,
+      parsedUsage: u.parsedUsage,
+      status: u.status,
+      expenseId: u.expenseId,
+      rawSnippet: u.rawSnippet,
+    };
+  });
 
   const props: AdminHubProps = {
     expenseSources,

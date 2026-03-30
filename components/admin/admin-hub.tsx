@@ -10,6 +10,7 @@ import {
   Settings2,
   Info,
   BarChart3,
+  BookOpen,
 } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
@@ -94,10 +95,20 @@ function AdminHubInner(props: AdminHubProps): React.JSX.Element {
           never stored or displayed here.
         </p>
 
-        <div className="mt-4">
+        <div className="mt-4 flex flex-wrap gap-2">
+          <Link
+            href="/admin/playbook"
+            className="inline-flex items-center gap-2 rounded-lg border border-primary/25 bg-primary/5 px-3 py-2 text-sm font-medium text-primary transition-[background-color,box-shadow] hover:bg-primary/10"
+          >
+            <BookOpen className="size-4 shrink-0" />
+            Integration playbook
+            <span className="text-xs font-normal text-muted-foreground">
+              — APIs, env vars, OAuth, GitHub
+            </span>
+          </Link>
           <Link
             href="/admin/analysis"
-            className="inline-flex items-center gap-2 rounded-lg border border-primary/25 bg-primary/5 px-3 py-2 text-sm font-medium text-primary transition-[background-color,box-shadow] hover:bg-primary/10"
+            className="inline-flex items-center gap-2 rounded-lg border border-border bg-muted/30 px-3 py-2 text-sm font-medium text-foreground transition-[background-color,box-shadow] hover:bg-muted/50"
           >
             <BarChart3 className="size-4 shrink-0" />
             Analysis & reports

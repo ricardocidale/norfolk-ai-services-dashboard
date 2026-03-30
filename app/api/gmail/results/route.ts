@@ -16,6 +16,10 @@ import {
   gmailResultsGetSchema,
   gmailResultsPatchSchema,
 } from "@/lib/validations/gmail";
+import {
+  emailScanResultPublicSelect,
+  withParsedUsagePlaceholder,
+} from "@/lib/prisma/email-scan-result-public";
 
 export const dynamic = "force-dynamic";
 
@@ -48,11 +52,14 @@ export async function GET(request: NextRequest): Promise<Response> {
 
   const results = await prisma.emailScanResult.findMany({
     where: parsed.data.status ? { status: parsed.data.status } : undefined,
+    select: emailScanResultPublicSelect,
     orderBy: { receivedAt: "desc" },
     take: 200,
   });
 
-  return jsonOk({ results });
+  return jsonOk({
+    results: results.map((r) => withParsedUsagePlaceholder(r)),
+  });
 }
 
 /**
@@ -87,7 +94,10 @@ export async function PATCH(request: NextRequest): Promise<Response> {
 
   const { id, action, acknowledgeCardDuplicateRisk } = parsed.data;
 
-  const result = await prisma.emailScanResult.findUnique({ where: { id } });
+  const result = await prisma.emailScanResult.findUnique({
+    where: { id },
+    select: emailScanResultPublicSelect,
+  });
   if (!result) {
     return jsonErr("Not found", 404, { code: "NOT_FOUND" });
   }
@@ -97,6 +107,7 @@ export async function PATCH(request: NextRequest): Promise<Response> {
       await prisma.emailScanResult.update({
         where: { id },
         data: { status: "REJECTED" },
+        select: { id: true },
       });
     } catch (e) {
       return jsonErr(e instanceof Error ? e.message : String(e), 500, {
@@ -130,6 +141,7 @@ export async function PATCH(request: NextRequest): Promise<Response> {
       await prisma.emailScanResult.update({
         where: { id },
         data: { status: "REJECTED", expenseId: overlap.id },
+        select: { id: true },
       });
     } catch {
       // best-effort status update
@@ -190,6 +202,7 @@ export async function PATCH(request: NextRequest): Promise<Response> {
       await prisma.emailScanResult.update({
         where: { id },
         data: { status: "REJECTED" },
+        select: { id: true },
       });
     } catch {
       // best-effort status update
@@ -225,9 +238,6 @@ export async function PATCH(request: NextRequest): Promise<Response> {
             fromEmail: result.fromEmail,
             confidence: result.confidence,
             gmailMessageId: result.gmailMessageId,
-            ...(result.parsedUsage != null && typeof result.parsedUsage === "object"
-              ? { usage: result.parsedUsage }
-              : {}),
           }),
         },
       });
@@ -235,6 +245,7 @@ export async function PATCH(request: NextRequest): Promise<Response> {
       await tx.emailScanResult.update({
         where: { id },
         data: { status: "IMPORTED", expenseId: created.id },
+        select: { id: true },
       });
 
       return created;

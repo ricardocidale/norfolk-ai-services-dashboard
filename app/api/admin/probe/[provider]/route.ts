@@ -2,7 +2,7 @@ import { auth } from "@clerk/nextjs/server";
 import { isAppAdmin } from "@/lib/admin/is-app-admin";
 import { ANTHROPIC_API_VERSION } from "@/lib/integrations/anthropic-constants";
 import { openaiApiKeyFromEnv } from "@/lib/integrations/openai-env";
-import { openaiModelsProbeUrl } from "@/lib/integrations/openai-constants";
+import { openaiOrganizationCostsUrl } from "@/lib/integrations/openai-constants";
 import { jsonErr, jsonOk } from "@/lib/http/api-response";
 
 export const dynamic = "force-dynamic";
@@ -33,23 +33,45 @@ export async function POST(_request: Request, ctx: Params): Promise<Response> {
         { code: "MISSING_KEY" },
       );
     }
-    const res = await fetch(openaiModelsProbeUrl(), {
+    const nowSec = Math.floor(Date.now() / 1000);
+    const oneDayAgoSec = nowSec - 24 * 60 * 60;
+    const url = new URL(openaiOrganizationCostsUrl());
+    url.searchParams.set("start_time", String(oneDayAgoSec));
+    url.searchParams.set("end_time", String(nowSec));
+    url.searchParams.set("bucket_width", "1d");
+    url.searchParams.set("limit", "1");
+
+    const res = await fetch(url.toString(), {
       headers: {
         Authorization: `Bearer ${apiKey}`,
         "Content-Type": "application/json",
       },
       cache: "no-store",
     });
+    const t = await res.text();
     if (!res.ok) {
-      const t = await res.text();
+      if (res.status === 401) {
+        return jsonErr(
+          "OpenAI rejected the API key (401). Check OPENAI_ADMIN_KEY / OPENAI_API_KEY.",
+          502,
+          { code: "UPSTREAM_UNAUTHORIZED" },
+        );
+      }
+      if (res.status === 403) {
+        return jsonErr(
+          "OpenAI key lacks organization costs scope. Use an Admin key (OPENAI_ADMIN_KEY).",
+          502,
+          { code: "WRONG_KEY_TYPE" },
+        );
+      }
       return jsonErr(
-        `OpenAI returned ${res.status}: ${t.slice(0, 280)}`,
+        `OpenAI organization costs returned ${res.status}: ${t.slice(0, 280)}`,
         502,
         { code: "UPSTREAM_ERROR" },
       );
     }
     return jsonOk({
-      message: "API key accepted (models endpoint reachable).",
+      message: "OpenAI organization costs endpoint reachable (admin scope OK).",
     });
   }
 

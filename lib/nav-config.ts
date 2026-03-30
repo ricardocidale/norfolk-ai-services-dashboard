@@ -1,6 +1,7 @@
 /** URL segment → breadcrumb label */
 export const BREADCRUMB_LABELS: Record<string, string> = {
   admin: "Admin",
+  playbook: "Integration playbook",
   analysis: "Analysis & reports",
   expenses: "Expenses",
   add: "Add manually",
