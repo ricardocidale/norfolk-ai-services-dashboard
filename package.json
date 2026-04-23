@@ -22,7 +22,7 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^0.52.0",
     "@clerk/nextjs": "^7.0.7",
-    "@clerk/shared": "^4.3.2",
+    "@clerk/shared": "^4.8.3",
     "@elevenlabs/elevenlabs-js": "^2.40.0",
     "@google/genai": "^1.47.0",
     "@googleapis/gmail": "^16.1.1",
